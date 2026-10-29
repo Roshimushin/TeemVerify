@@ -1,0 +1,91 @@
+// TeemVerify server function: the only door into the block store.
+// Deployed in the Supabase dashboard as "verify-api" with JWT verification turned off;
+// callers prove themselves with the TEEMVERIFY_TOKEN secret instead.
+//
+// Actions (POST JSON with an "action" field):
+//   match          { text, threshold?, count? } -> blocks whose meaning is close to text
+//   embed_missing  {}                           -> fills in embeddings for blocks that lack one
+
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+);
+
+// Supabase's built-in gte-small model: 384 numbers per sentence.
+const model = new Supabase.ai.Session("gte-small");
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "content-type, x-teemverify-token",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function reply(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+async function embed(text: string): Promise<string> {
+  const vector = await model.run(text, { mean_pool: true, normalize: true });
+  // pgvector reads vectors written as "[0.1,0.2,...]".
+  return JSON.stringify(vector);
+}
+
+async function match(text: string, threshold = 0.85, count = 5) {
+  const { data, error } = await supabase.rpc("match_blocks", {
+    query_embedding: await embed(text),
+    match_threshold: threshold,
+    match_count: count,
+  });
+  if (error) throw error;
+  return { matches: data };
+}
+
+async function embedMissing() {
+  const { data: blocks, error } = await supabase
+    .from("blocks")
+    .select("id, claim_text")
+    .is("embedding", null)
+    .limit(100);
+  if (error) throw error;
+
+  for (const block of blocks) {
+    const { error: updateError } = await supabase
+      .from("blocks")
+      .update({ embedding: await embed(block.claim_text) })
+      .eq("id", block.id);
+    if (updateError) throw updateError;
+  }
+  return { embedded: blocks.length };
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return reply({ error: "Use POST" }, 405);
+
+  if (req.headers.get("x-teemverify-token") !== Deno.env.get("TEEMVERIFY_TOKEN")) {
+    return reply({ error: "Not allowed" }, 401);
+  }
+
+  try {
+    const body = await req.json();
+    switch (body.action) {
+      case "match":
+        if (typeof body.text !== "string" || !body.text.trim()) {
+          return reply({ error: "match needs text" }, 400);
+        }
+        return reply(await match(body.text, body.threshold, body.count));
+      case "embed_missing":
+        return reply(await embedMissing());
+      default:
+        return reply({ error: `Unknown action: ${body.action}` }, 400);
+    }
+  } catch (err) {
+    console.error(err);
+    return reply({ error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
