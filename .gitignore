@@ -1,0 +1,12 @@
+# Secrets: API keys and passwords never go into the repo.
+.env
+.env.*
+*.pem
+supabase/.temp/
+
+# Generated or local-only files
+node_modules/
+dist/
+exports/
+.DS_Store
+Thumbs.db
