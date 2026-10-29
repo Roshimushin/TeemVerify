@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>TeemVerify settings</title>
+  <link rel="stylesheet" href="ui.css">
+  <style>main { max-width: 480px; padding: 32px 24px; }</style>
+</head>
+<body>
+  <main>
+    <h1>TeemVerify settings</h1>
+    <p class="muted">Saved only in this browser.</p>
+
+    <label for="token">Access token</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false">
+    <div class="hint">The private token from your password manager. It lets this extension use your block store.</div>
+
+    <label for="cap">Daily spending cap (US dollars)</label>
+    <input id="cap" type="number" min="0" step="0.5">
+    <div class="hint">Checking stops for the day once new claims would cost more than this.</div>
+
+    <div class="row">
+      <button id="save">Save</button>
+      <button id="test" class="secondary">Test connection</button>
+      <span id="status" role="status"></span>
+    </div>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
