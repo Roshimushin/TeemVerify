@@ -1,16 +1,20 @@
 // TeemVerify server function: the only door into the block store.
-// Deployed in the Supabase dashboard as "verify-api" with JWT verification turned off;
+// Deployed with scripts/deploy.ps1, JWT verification turned off;
 // callers prove themselves with the TEEMVERIFY_TOKEN secret instead.
 //
 // Actions (POST JSON with an "action" field):
 //   match          { text, threshold?, count? } -> blocks whose meaning is close to text
 //   embed_missing  {}                           -> fills in embeddings for blocks that lack one
 //   export         {}                           -> every row of every block store table, as JSON
-//   check          { url, sentences, daily_cap_usd } -> grades up to 6 sentences (see check.ts)
+//   lookup         { url, sentences, daily_cap_usd } -> cheap labelling of up to 20 sentences;
+//                                                     claims go to the research queue (see check.ts)
+//   check          { url, sentences, daily_cap_usd } -> researches up to 6 sentences now
+//   queue_next     { limit? }                   -> claims waiting for research, most-seen first
+//   submit_results { results }                  -> research findings from Claude Code
 //   spend          {}                           -> what Claude calls have cost so far today (UTC)
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { checkSentences, spentToday } from "./check.ts";
+import { checkSentences, lookupSentences, queueNext, spentToday, submitResults } from "./check.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -76,6 +80,8 @@ const EXPORT_TABLES = [
   "challenges",
   "non_fact_tags",
   "api_spend",
+  "sentence_memory",
+  "claim_queue",
 ];
 const PAGE_SIZE = 1000;
 
@@ -118,8 +124,14 @@ Deno.serve(async (req) => {
         return reply(await embedMissing());
       case "export":
         return reply(await exportAll());
+      case "lookup":
+        return reply(await lookupSentences(supabase, embed, body));
       case "check":
         return reply(await checkSentences(supabase, embed, body));
+      case "queue_next":
+        return reply(await queueNext(supabase, body));
+      case "submit_results":
+        return reply(await submitResults(supabase, embed, body));
       case "spend":
         return reply({ spent_today_usd: await spentToday(supabase) });
       default:

@@ -5,8 +5,8 @@
   <title>TeemVerify</title>
   <link rel="stylesheet" href="ui.css">
   <style>
-    main { width: 360px; padding: 16px; }
-    #list { margin: 12px 0 0; padding: 0; list-style: none; max-height: 340px; overflow-y: auto; }
+    main { width: 380px; padding: 16px; }
+    #list { margin: 12px 0 0; padding: 0; list-style: none; max-height: 380px; overflow-y: auto; }
     #list li { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.4; }
     .sentence { margin-bottom: 4px; }
     .item { display: flex; gap: 6px; align-items: baseline; margin-top: 2px; }
@@ -20,6 +20,7 @@
       white-space: nowrap;
     }
     .reason { color: var(--muted); }
+    .small { padding: 3px 8px; font-size: 12px; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -27,8 +28,8 @@
     <h1>TeemVerify</h1>
     <p id="status" class="muted" role="status">Checking connection…</p>
     <div class="row" style="margin-top: 0">
-      <button id="read" disabled>Read this page</button>
-      <button id="check" class="secondary" hidden>Check sentences</button>
+      <button id="lookup" disabled>Check this page</button>
+      <button id="checkAll" class="secondary" hidden></button>
     </div>
     <p id="result" class="muted" role="status" hidden></p>
     <ul id="list" hidden></ul>

@@ -1,8 +1,11 @@
-# Sends a few sentences to the "check" action and prints the results.
-# Usage: scripts\try-check.ps1 "First sentence." "Second sentence."
-# Each run spends a little real money (logged in api_spend, counted against the daily cap).
+# Sends a few sentences to the "lookup" (cheap) or "check" (researched) action and prints the results.
+# Usage: scripts\try-check.ps1 [-Action lookup|check] "First sentence." "Second sentence."
+# Each run can spend a little real money (logged in api_spend, counted against the daily cap).
 
-param([Parameter(Mandatory, ValueFromRemainingArguments)][string[]]$Sentences)
+param(
+    [ValidateSet('lookup', 'check')][string]$Action = 'lookup',
+    [Parameter(Mandatory, ValueFromRemainingArguments)][string[]]$Sentences
+)
 
 $root = Split-Path $PSScriptRoot -Parent
 $settings = @{}
@@ -10,7 +13,7 @@ Get-Content (Join-Path $root '.env') | Where-Object { $_ -match '^(\w+)=(.*)$' }
     $settings[$Matches[1]] = $Matches[2]
 }
 
-$body = @{ action = 'check'; url = 'test://try-check'; sentences = $Sentences; daily_cap_usd = 5 } | ConvertTo-Json
+$body = @{ action = $Action; url = 'test://try-check'; sentences = $Sentences; daily_cap_usd = 5 } | ConvertTo-Json
 $reply = Invoke-RestMethod -Method Post -TimeoutSec 300 `
     -Uri "$($settings.SUPABASE_URL)/functions/v1/verify-api" `
     -Headers @{ 'x-teemverify-token' = $settings.TEEMVERIFY_TOKEN } `

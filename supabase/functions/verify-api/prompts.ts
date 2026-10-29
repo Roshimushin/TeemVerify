@@ -2,16 +2,25 @@
 // "Fact Library Rules (RAG)", "Claim Tiers & Tier History", "Attribution, Quotes & Denials"
 // and "Evidence Rules: Burden of Proof & Exhibits". Change the rules there first, then here.
 
-export const CHECK_SYSTEM = `You are the claim checker for Verify, a browser extension that labels claims on web pages for one reader. You receive numbered sentences from one web page. Search the web for evidence and grade each sentence by these rules. The reader is the juror: label exhibits honestly, never deliver a verdict about a person.
-
-## 1. What kind of statement is it?
+const CLASSIFY_RULES = `## 1. What kind of statement is it?
 Split each sentence into atomic claims (one checkable statement each). Classify each as:
 - "claim": an objective, checkable statement of fact. Gets a tier.
 - "value": a moral or political judgment ("X is wrong").
 - "opinion": taste, character judgments ("coward"), unbounded superlatives ("best ever"), predictions of no specific outcome.
 - "forecast": a prediction of a specific checkable future outcome. Give a resolve_by date if one can be inferred.
 - "not_a_claim": questions without an embedded accusation, greetings, credits, jokes, instructions, fragments.
-Values, opinions and forecasts are never tiered. If a value or opinion rests on a factual claim, extract that claim separately ("I don't believe X happened" = an ungraded belief + the graded claim "X happened").
+Values, opinions and forecasts are never tiered. If a value or opinion rests on a factual claim, extract that claim separately ("I don't believe X happened" = an ungraded belief + the graded claim "X happened"). Hyperbole and charged words don't make a sentence an opinion if a checkable claim sits underneath: extract the claim.
+Reword each item in its most precise neutral form: name the actor when known, keep the accurate term even when ugly, strip hyperbole and insults.`;
+
+export const TRIAGE_SYSTEM = `You sort sentences from a web page for Verify, a fact-labelling browser extension. Don't research anything; only classify. Same standard for every side, party and person.
+
+${CLASSIFY_RULES}
+
+For every input sentence, return its index and its items (one per atomic claim or statement; never an empty list, use one "not_a_claim" item instead).`;
+
+export const CHECK_SYSTEM = `You are the claim checker for Verify, a browser extension that labels claims on web pages for one reader. You receive numbered sentences from one web page. Search the web for evidence and grade each sentence by these rules. The reader is the juror: label exhibits honestly, never deliver a verdict about a person.
+
+${CLASSIFY_RULES}
 
 ## 2. The four tiers (claims only)
 - Tier 1, verified: affirmatively shown true beyond reasonable doubt by primary evidence you found.
@@ -40,7 +49,13 @@ Answer for each pair:
 - "same": A asserts the same claim as B (rewording, a subset, or a less precise version that B's evidence fully covers).
 - "opposite": A asserts the negation or a direct contradiction of B.
 - "different": anything else, including the same topic with different facts, numbers, dates, people or scope.
-Be strict: if A has any detail B's evidence would not cover, answer "different".`;
+Different wording, tone or word order alone never makes it "different". If A adds a detail B's evidence would not cover, answer "different".
+
+Examples:
+- A: "The Eiffel Tower stands in Paris." B: "The Eiffel Tower is located in Paris, France." -> same
+- A: "The Eiffel Tower isn't in Paris." B: "The Eiffel Tower is located in Paris, France." -> opposite
+- A: "The Eiffel Tower is 330 meters tall." B: "The Eiffel Tower is located in Paris, France." -> different
+- A: "Unemployment fell to 4% in 2024." B: "Unemployment fell to 4% in 2023." -> different`;
 
 const EXHIBIT = {
   type: "object",
@@ -79,6 +94,38 @@ export const CHECK_SCHEMA = {
         properties: {
           index: { type: "integer" },
           items: { type: "array", items: ITEM },
+        },
+        required: ["index", "items"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["results"],
+  additionalProperties: false,
+};
+
+export const TRIAGE_SCHEMA = {
+  type: "object",
+  properties: {
+    results: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          index: { type: "integer" },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                kind: { type: "string", enum: ["claim", "value", "opinion", "forecast", "not_a_claim"] },
+                text: { type: "string" },
+                resolve_by: { type: ["string", "null"] },
+              },
+              required: ["kind", "text", "resolve_by"],
+              additionalProperties: false,
+            },
+          },
         },
         required: ["index", "items"],
         additionalProperties: false,
