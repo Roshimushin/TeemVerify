@@ -104,6 +104,22 @@ export const CHECK_SCHEMA = {
   additionalProperties: false,
 };
 
+export const IMAGE_SYSTEM = `You look at one image from a web post for Verify, a fact-labelling browser extension. Many posts are an image with text on it (memes, screenshots of posts or headlines, quote cards, charts with captions); many have no text at all.
+- has_text: true only if the image contains readable text that says something (a statement, headline, quote, caption or chart labels). Watermarks, logos, usernames alone, and interface buttons don't count.
+- text: when has_text is true, transcribe that text exactly, in reading order, as plain sentences. Keep the original wording, spelling and capitals. For a screenshot of a post, start with who posted it if shown ("Posted by @name:"). Leave out watermarks and interface text. Null when has_text is false.
+- description: one short neutral line saying what the image shows. Don't judge or fact-check it.`;
+
+export const IMAGE_SCHEMA = {
+  type: "object",
+  properties: {
+    has_text: { type: "boolean" },
+    text: { type: ["string", "null"] },
+    description: { type: "string" },
+  },
+  required: ["has_text", "text", "description"],
+  additionalProperties: false,
+};
+
 export const TRIAGE_SCHEMA = {
   type: "object",
   properties: {

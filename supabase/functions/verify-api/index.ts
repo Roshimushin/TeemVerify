@@ -11,10 +11,12 @@
 //   check          { url, sentences, daily_cap_usd } -> researches up to 6 sentences now
 //   queue_next     { limit? }                   -> claims waiting for research, most-seen first
 //   submit_results { results }                  -> research findings from Claude Code
+//   read_images    { images, daily_cap_usd }    -> text found in up to 4 post images (see images.ts)
 //   spend          {}                           -> what Claude calls have cost so far today (UTC)
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { checkSentences, lookupSentences, queueNext, spentToday, submitResults } from "./check.ts";
+import { readImages } from "./images.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -82,6 +84,7 @@ const EXPORT_TABLES = [
   "api_spend",
   "sentence_memory",
   "claim_queue",
+  "image_memory",
 ];
 const PAGE_SIZE = 1000;
 
@@ -128,6 +131,8 @@ Deno.serve(async (req) => {
         return reply(await lookupSentences(supabase, embed, body));
       case "check":
         return reply(await checkSentences(supabase, embed, body));
+      case "read_images":
+        return reply(await readImages(supabase, body));
       case "queue_next":
         return reply(await queueNext(supabase, body));
       case "submit_results":

@@ -257,7 +257,7 @@ export async function spentToday(supabase: SupabaseClient): Promise<number> {
   return data.reduce((sum, row) => sum + Number(row.cost_usd), 0);
 }
 
-type Purpose = "triage" | "compare" | "check";
+type Purpose = "triage" | "compare" | "check" | "image";
 
 async function logSpend(supabase: SupabaseClient, purpose: Purpose, usage: Anthropic.Usage) {
   const searches = usage.server_tool_use?.web_search_requests ?? 0;
@@ -277,7 +277,7 @@ async function logSpend(supabase: SupabaseClient, purpose: Purpose, usage: Anthr
 }
 
 // Sends a request, continuing it if a long web search pauses the turn. Logs spend for every call.
-async function ask(
+export async function ask(
   supabase: SupabaseClient,
   purpose: Purpose,
   params: Omit<Anthropic.MessageCreateParamsNonStreaming, "model" | "max_tokens">,

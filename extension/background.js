@@ -5,29 +5,69 @@ import { callVerifyApi, getSettings } from "./api.js";
 const LOOKUP_CHUNK = 8;
 const CHECK_CHUNK = 5;
 
+const IMAGE_CHUNK = 4;
+const MIN_WORDS = 4;
+
 // Progress for each tab lives in session storage under "check:<tabId>", so the popup can
 // close and reopen while work keeps running here. Shape:
 //   { url, status: "running" | "done" | "cap_reached" | "error", task, done, total,
-//     results: [{ index, sentence, status, items, error? }], spentTodayUsd, error }
+//     results: [{ index, sentence, status, items, error?, image? }], spentTodayUsd, error }
+// A result with "image" set came from text Claude read in that image.
 
 async function save(key, progress) {
   await chrome.storage.session.set({ [key]: progress });
 }
 
+// Reads the page's images and returns their text as sentences, image by image.
+async function imageSentences(images, dailyCapUsd) {
+  const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
+  const found = [];
+  for (let start = 0; start < images.length; start += IMAGE_CHUNK) {
+    const reply = await callVerifyApi("read_images", {
+      images: images.slice(start, start + IMAGE_CHUNK),
+      daily_cap_usd: dailyCapUsd,
+    });
+    for (const image of reply.results) {
+      if (!image.has_text) continue;
+      for (const line of image.text.split(/\n+/)) {
+        for (const { segment } of segmenter.segment(line)) {
+          const text = segment.trim();
+          if (text.split(/\s+/).length >= MIN_WORDS) found.push({ text, image: image.url });
+        }
+      }
+    }
+  }
+  return found;
+}
+
 async function lookupPage(tabId, page) {
   const key = `check:${tabId}`;
   const { dailyCapUsd } = await getSettings();
-  const sentences = page.sentences.map((s) => s.text);
   const progress = {
     url: page.url,
     status: "running",
-    task: "Looking up",
+    task: "Reading images",
     done: 0,
-    total: sentences.length,
+    total: page.sentences.length,
     results: [],
     spentTodayUsd: null,
     error: null,
   };
+  await save(key, progress);
+
+  // Image text comes first: the image is usually what the post and its comments are about.
+  let fromImages = [];
+  if (page.images?.length) {
+    try {
+      fromImages = await imageSentences(page.images, dailyCapUsd);
+    } catch (err) {
+      console.warn("Couldn't read images:", err);
+    }
+  }
+  const entries = [...fromImages, ...page.sentences.map((s) => ({ text: s.text }))];
+  const sentences = entries.map((e) => e.text);
+  progress.task = "Looking up";
+  progress.total = sentences.length;
   await save(key, progress);
 
   for (let start = 0; start < sentences.length; start += LOOKUP_CHUNK) {
@@ -38,7 +78,11 @@ async function lookupPage(tabId, page) {
         daily_cap_usd: dailyCapUsd,
       });
       // Server indexes are per chunk; store page-wide ones.
-      progress.results.push(...reply.results.map((r) => ({ ...r, index: start + r.index })));
+      progress.results.push(...reply.results.map((r) => ({
+        ...r,
+        index: start + r.index,
+        image: entries[start + r.index].image,
+      })));
       progress.spentTodayUsd = reply.spent_today_usd;
       if (reply.results.some((r) => r.status === "skipped_cap")) progress.status = "cap_reached";
     } catch (err) {

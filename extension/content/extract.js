@@ -63,5 +63,30 @@
     }
   });
 
-  return { url: location.href, title: document.title, passageCount: passages.length, sentences };
+  // Post images that might carry text (memes, screenshots, quote cards). The page's share
+  // image (og:image) comes first: on Imgur and Reddit image posts it is the post itself.
+  // Then large images in the content, biggest first. Each is read by Claude on the server.
+  const MAX_IMAGES = 4;
+  const MIN_IMAGE_WIDTH = 250;
+  const MIN_IMAGE_HEIGHT = 150;
+  const images = [];
+  const addImage = (src) => {
+    if (!src || !/^https?:/.test(src) || /\.svg(\?|$)/i.test(src) || images.includes(src)) return;
+    images.push(src);
+  };
+  addImage(document.querySelector("meta[property='og:image']")?.content);
+  [...document.images]
+    .filter((img) => !img.closest(SKIP_INSIDE) && isVisible(img))
+    .map((img) => ({ src: img.currentSrc || img.src, rect: img.getBoundingClientRect() }))
+    .filter(({ rect }) => rect.width >= MIN_IMAGE_WIDTH && rect.height >= MIN_IMAGE_HEIGHT)
+    .sort((a, b) => b.rect.width * b.rect.height - a.rect.width * a.rect.height)
+    .forEach(({ src }) => addImage(src));
+
+  return {
+    url: location.href,
+    title: document.title,
+    passageCount: passages.length,
+    sentences,
+    images: images.slice(0, MAX_IMAGES),
+  };
 })();

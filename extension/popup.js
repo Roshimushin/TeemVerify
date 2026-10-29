@@ -65,6 +65,7 @@ function renderItem(item, sentenceStatus) {
 function renderResults(results) {
   list.replaceChildren(...results.map((r) => {
     const li = el("li");
+    if (r.image) li.append(el("div", "muted small-label", "In the image"));
     li.append(el("div", "sentence", r.sentence));
     if (r.status === "error") li.append(el("div", "error", `Couldn't check: ${r.error}`));
     if (r.status === "skipped_cap") li.append(el("div", "muted", "Not checked: daily cap reached."));
@@ -136,8 +137,8 @@ lookupButton.addEventListener("click", async () => {
       files: ["content/extract.js"],
     });
     const page = injection.result;
-    if (page.sentences.length === 0) {
-      setResult("No sentences found on this page.");
+    if (page.sentences.length === 0 && page.images.length === 0) {
+      setResult("No sentences or images found on this page.");
       lookupButton.disabled = false;
       return;
     }
