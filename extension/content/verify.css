@@ -1,0 +1,440 @@
+/*
+  TeemVerify on-page styling: every color, mark, chip, card and the legend lives here.
+  Built from the design handoffs "Inline claim labels on a news article" and
+  "Default view vs. X-ray view" (Oct 27, 2026). Restyle by changing the tokens first.
+
+  This one file is used twice: injected into the page (for the claim marks and chips,
+  which sit in the page's own text) and linked inside the extension's shadow root
+  (for the card and legend, which are kept apart from the page's styles).
+
+  Rule from the handoff: underlines are for facts, chips are for non-facts. Never mix.
+*/
+
+:root,
+:host {
+  /* Tier 1 · verified: faint blue underline. Quiet. */
+  --tv-tier1: #2f6fde;
+  --tv-tier1-line: rgba(47, 111, 222, 0.55);
+  /* Tier 2 · good-faith conclusion: subtle dotted underline (X-ray only). */
+  --tv-tier2: #6b7a99;
+  /* Tier 3 · unverified: grey (X-ray only). */
+  --tv-tier3: #8a8f98;
+  /* Tier 4 · refuted: loud red highlight. */
+  --tv-tier4: #c62828;
+  --tv-tier4-bg: rgba(229, 57, 53, 0.2);
+  /* Not checked yet: a claim waiting in the research queue (X-ray only). */
+  --tv-unchecked: #b8bcc4;
+
+  /* Chips for non-facts (X-ray only). */
+  --tv-chip-bg: #eef0f4;
+  --tv-chip-text: #4a5160;
+  --tv-chip-border: #d9dde3;
+
+  /* Card and legend. */
+  --tv-surface: #ffffff;
+  --tv-text: #1c1f24;
+  --tv-muted: #5d6470;
+  --tv-border: #e3e6eb;
+  --tv-shadow: 0 8px 28px rgba(20, 24, 31, 0.18), 0 1px 3px rgba(20, 24, 31, 0.08);
+  --tv-radius: 12px;
+  --tv-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :host {
+    --tv-surface: #1f2228;
+    --tv-text: #e8eaee;
+    --tv-muted: #a3a9b4;
+    --tv-border: #353a43;
+    --tv-chip-bg: #2a2e36;
+    --tv-chip-text: #c8ccd4;
+    --tv-chip-border: #3a3f48;
+    --tv-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* ---------- Marks on claims (in the page's text) ---------- */
+
+::highlight(tv-tier1) {
+  text-decoration-line: underline;
+  text-decoration-color: var(--tv-tier1-line);
+  text-decoration-thickness: 2px;
+}
+
+::highlight(tv-tier4) {
+  background-color: var(--tv-tier4-bg);
+  text-decoration-line: underline;
+  text-decoration-color: var(--tv-tier4);
+  text-decoration-thickness: 2px;
+}
+
+::highlight(tv-tier2) {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--tv-tier2);
+  text-decoration-thickness: 2px;
+}
+
+::highlight(tv-tier3) {
+  color: var(--tv-tier3);
+  text-decoration-line: underline;
+  text-decoration-color: var(--tv-tier3);
+  text-decoration-thickness: 1px;
+}
+
+::highlight(tv-unchecked) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-color: var(--tv-unchecked);
+  text-decoration-thickness: 1px;
+}
+
+/* Marks can't show a pointer themselves, so the page gets one while hovering a mark. */
+html.tv-pointer,
+html.tv-pointer * {
+  cursor: pointer !important;
+}
+
+/* ---------- Chips on non-facts (in the page's text) ---------- */
+
+.tv-chip {
+  all: initial;
+  display: none;
+  margin-left: 0.35em;
+  padding: 0 0.5em;
+  border: 1px solid var(--tv-chip-border);
+  border-radius: 999px;
+  background: var(--tv-chip-bg);
+  color: var(--tv-chip-text);
+  font: 600 0.72em/1.6 var(--tv-font);
+  vertical-align: 0.1em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+html.tv-xray .tv-chip {
+  display: inline-block;
+}
+
+/* ---------- Shadow root: legend, image badges, card ---------- */
+
+.tv-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2147483647;
+  font: 14px/1.45 var(--tv-font);
+  color: var(--tv-text);
+}
+
+.tv-layer * {
+  box-sizing: border-box;
+}
+
+.tv-layer button {
+  font: inherit;
+  color: inherit;
+}
+
+/* Legend chip in the corner */
+.tv-legend {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.tv-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--tv-border);
+  border-radius: 999px;
+  background: var(--tv-surface);
+  box-shadow: var(--tv-shadow);
+  font-size: 13px;
+}
+
+.tv-pill-label {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tv-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tv-tier1);
+}
+
+.tv-counts {
+  color: var(--tv-muted);
+  font-weight: 400;
+}
+
+.tv-toggle {
+  border: 1px solid var(--tv-border);
+  border-radius: 999px;
+  background: none;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tv-toggle[aria-pressed="true"] {
+  background: var(--tv-text);
+  color: var(--tv-surface);
+  border-color: var(--tv-text);
+}
+
+.tv-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--tv-border);
+  border-top-color: var(--tv-tier1);
+  border-radius: 50%;
+  animation: tv-spin 0.8s linear infinite;
+}
+
+@keyframes tv-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-spinner { animation-duration: 2.4s; }
+}
+
+.tv-legend-panel {
+  width: 280px;
+  padding: 14px 16px;
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  background: var(--tv-surface);
+  box-shadow: var(--tv-shadow);
+}
+
+.tv-legend-panel h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.tv-legend-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+.tv-swatch {
+  flex: none;
+  width: 44px;
+  font-weight: 600;
+}
+
+.tv-swatch.t1 { text-decoration: underline 2px var(--tv-tier1-line); }
+.tv-swatch.t2 { text-decoration: underline dotted 2px var(--tv-tier2); }
+.tv-swatch.t3 { color: var(--tv-tier3); text-decoration: underline 1px var(--tv-tier3); }
+.tv-swatch.t4 { background: var(--tv-tier4-bg); text-decoration: underline 2px var(--tv-tier4); }
+.tv-swatch.unchecked { text-decoration: underline dashed 1px var(--tv-unchecked); }
+
+.tv-legend-note {
+  margin: 10px 0 0;
+  color: var(--tv-muted);
+  font-size: 12px;
+}
+
+/* Badge over a post image whose text was read */
+.tv-image-badge {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid var(--tv-border);
+  border-radius: 999px;
+  background: var(--tv-surface);
+  box-shadow: var(--tv-shadow);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tv-image-badge .tv-dot.t4 { background: var(--tv-tier4); }
+.tv-image-badge .tv-dot.t2 { background: var(--tv-tier2); }
+.tv-image-badge .tv-dot.t3,
+.tv-image-badge .tv-dot.unchecked,
+.tv-image-badge .tv-dot.nonfact { background: var(--tv-tier3); }
+
+/* Claim card: skimmable first, tap for depth, never more than one screen */
+.tv-card {
+  position: absolute;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  pointer-events: auto;
+  padding: 16px;
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  background: var(--tv-surface);
+  box-shadow: var(--tv-shadow);
+}
+
+/* Phone-width pages: the card becomes a bottom sheet */
+@media (max-width: 600px) {
+  .tv-card {
+    left: 0 !important;
+    right: 0;
+    top: auto !important;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    border-radius: var(--tv-radius) var(--tv-radius) 0 0;
+  }
+}
+
+.tv-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tv-close {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--tv-muted);
+  cursor: pointer;
+}
+
+.tv-tier {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.tv-tier.t1 { background: var(--tv-tier1); }
+.tv-tier.t2 { background: var(--tv-tier2); }
+.tv-tier.t3 { background: var(--tv-tier3); }
+.tv-tier.t4 { background: var(--tv-tier4); }
+.tv-tier.unchecked { background: var(--tv-unchecked); color: var(--tv-text); }
+.tv-tier.nonfact { background: var(--tv-chip-bg); color: var(--tv-chip-text); border: 1px solid var(--tv-chip-border); }
+
+.tv-badge {
+  padding: 1px 8px;
+  border: 1px solid var(--tv-border);
+  border-radius: 999px;
+  color: var(--tv-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tv-claim {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.tv-meaning {
+  margin: 0 0 10px;
+  color: var(--tv-muted);
+  font-size: 13px;
+}
+
+.tv-reason {
+  margin: 0 0 12px;
+}
+
+.tv-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--tv-border);
+}
+
+.tv-section h3 {
+  margin: 0 0 6px;
+  color: var(--tv-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.tv-section ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tv-section li {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.tv-section a {
+  color: var(--tv-tier1);
+  word-break: break-word;
+}
+
+.tv-source-type {
+  color: var(--tv-muted);
+  font-size: 12px;
+}
+
+.tv-quote {
+  margin: 0 0 10px;
+  padding-left: 10px;
+  border-left: 3px solid var(--tv-border);
+  color: var(--tv-muted);
+  font-size: 13px;
+}
+
+.tv-item + .tv-item {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--tv-border);
+}
+
+.tv-action {
+  margin-top: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--tv-tier1);
+  border-radius: 8px;
+  background: var(--tv-tier1);
+  color: #fff !important;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tv-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tv-more {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--tv-tier1) !important;
+  font-size: 13px;
+  cursor: pointer;
+}

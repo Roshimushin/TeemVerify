@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verify design preview</title>
+  <!-- The real on-page styles and code from the extension, with sample labels from the
+       design handoffs. Open this file in Chrome to review every mark, chip and card. -->
+  <link rel="stylesheet" href="../extension/content/verify.css">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #1c1f24; font: 17px/1.6 Georgia, serif; }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 16px 120px; }
+    .note { font: 14px/1.5 system-ui, sans-serif; color: #5d6470; background: #fff; border: 1px solid #e3e6eb; border-radius: 10px; padding: 12px 16px; }
+    article, .thread { background: #fff; border: 1px solid #e3e6eb; border-radius: 10px; padding: 20px 24px; margin-top: 24px; }
+    h1 { font-size: 28px; line-height: 1.25; margin: 0 0 12px; }
+    h2 { font: 600 13px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .05em; color: #5d6470; margin: 0 0 12px; }
+    .comment { font: 15px/1.5 system-ui, sans-serif; border-left: 3px solid #e3e6eb; padding-left: 12px; margin: 14px 0; }
+    .comment b { font-size: 13px; color: #5d6470; display: block; }
+    .narrow { max-width: 340px; }
+    a { color: #2f6fde; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="note">
+      <strong>Verify design preview.</strong> Sample text and labels from the handoffs
+      "Inline claim labels on a news article" and "Default view vs. X-ray view". All examples are invented.
+      Tap a mark or chip to open its card. Use <strong>X-ray</strong> in the corner chip to show every label.
+      Narrow the window to see the phone layout.
+    </div>
+
+    <article>
+      <h2>News article</h2>
+      <h1>Rumors spread that newcomers in the town of Brookhaven are stealing pets</h1>
+      <p>City officials said they found no credible reports of pets being harmed by new residents. At a packed meeting on Tuesday, one speaker repeated the claim that started it all: "They're taking people's pets." The town is overwhelmed by the pace of change. Some residents say they feel unsafe. A local group says <a href="#">the newcomers are organizing a secret pet market</a> on weekends.</p>
+    </article>
+
+    <div class="thread">
+      <h2>Forum thread</h2>
+      <p>Billionaires in Northvale pay too little in taxes. Last year, 12 of the 20 richest residents paid no city income tax. Back in 1960, the top rate was 70%. The new transit levy will fix the bus system within two years. The mayor secretly wrote the levy to help his donors.</p>
+      <div class="comment narrow"><b>reply · narrow comment</b>The levy doubles everyone's taxes. I read the whole bill last night.</div>
+      <div class="comment narrow"><b>reply</b>The council approved the levy in a 5-4 vote last month.</div>
+    </div>
+  </main>
+
+  <script>
+    // Stand-ins for the browser-extension functions marks.js uses, so it runs in a plain page.
+    const stored = {};
+    window.chrome = {
+      runtime: {
+        getURL: (path) => `../extension/${path}`,
+        onMessage: { addListener: (fn) => { window.__send = fn; } },
+        sendMessage: async (message) => {
+          if (message.type === "api" && message.action === "block_detail") {
+            return { ok: true, data: {
+              block: { status: "ai_draft" },
+              history: [{ old_tier: null, new_tier: SAMPLE_TIERS[message.payload.block_id], actor: "model", created_at: "2026-10-28T15:00:00Z" }],
+              sightings: 3,
+            } };
+          }
+          if (message.type === "checkNow") alert("In the extension, this researches the claim now (about 2¢).");
+          return { ok: true };
+        },
+      },
+      storage: { local: {
+        get: async (key) => ({ [key]: stored[key] }),
+        set: async (values) => Object.assign(stored, values),
+      } },
+    };
+
+    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3 };
+    const claim = (id, text, tier, reason, exhibits = [], extra = {}) =>
+      ({ kind: "claim", text, tier, reason, scope: null, as_of: null, resolve_by: null, exhibits, block_id: id, ...extra });
+    const nonFact = (kind, text, extra = {}) =>
+      ({ kind, text, tier: null, reason: "", scope: null, as_of: null, resolve_by: null, exhibits: [], ...extra });
+    const exhibit = (url, source_type, location) => ({ url, source_type, location });
+
+    const RESULTS = [
+      { sentence: "City officials said they found no credible reports of pets being harmed by new residents.", items: [
+        claim("a", "Brookhaven city officials said they found no credible reports of pets being harmed by new residents.", 1,
+          "The city's published statement says this, word for word.",
+          [exhibit("https://example.org/brookhaven/statement", "primary", "City statement, Oct 2026")], { as_of: "2026-10-24" }) ] },
+      { sentence: "They're taking people's pets.", items: [
+        claim("b", "Newcomers in Brookhaven are taking people's pets.", 4,
+          "Refuted by the expected-evidence test: if this were happening, reports would exist. Officials checked police and animal-control records and found none.",
+          [exhibit("https://example.org/brookhaven/statement", "primary", "City statement"),
+           exhibit("https://example.org/brookhaven/animal-control-log", "primary", "Animal control log, Sep–Oct")]) ] },
+      { sentence: "The town is overwhelmed by the pace of change.", items: [
+        claim("c", "Brookhaven's services are strained by the pace of population growth.", 2,
+          "Population grew 18% in two years and school enrollment is over capacity, but whether the town is \"overwhelmed\" is a judgment the figures support only in part.",
+          [exhibit("https://example.org/census/brookhaven", "primary", "Population estimates")]) ] },
+      { sentence: "Some residents say they feel unsafe.", items: [ nonFact("opinion", "Some residents feel unsafe.") ] },
+      { sentence: "Billionaires in Northvale pay too little in taxes.", items: [ nonFact("value", "Northvale's billionaires should pay more in taxes.") ] },
+      { sentence: "Last year, 12 of the 20 richest residents paid no city income tax.", items: [
+        claim("d", "In 2025, 12 of Northvale's 20 richest residents paid no city income tax.", 1,
+          "Northvale's tax office published the figures in its annual report.",
+          [exhibit("https://example.org/northvale/tax-report-2025", "primary", "Table 4")], { as_of: "2025-12-31" }) ] },
+      { sentence: "Back in 1960, the top rate was 70%.", items: [
+        claim("e", "In 1960, the top marginal city income tax rate was 70%.", 1,
+          "The 1960 rate schedule confirms it. Note: that was the marginal rate; effective rates paid were lower.",
+          [exhibit("https://example.org/northvale/archive/1960-rates", "primary", "1960 rate schedule")], { scope: "Marginal rate, not effective rate" }) ] },
+      { sentence: "The new transit levy will fix the bus system within two years.", items: [
+        nonFact("forecast", "The transit levy will fix Northvale's bus system by 2028.", { resolve_by: "2028-10-28" }) ] },
+      { sentence: "The mayor secretly wrote the levy to help his donors.", items: [
+        claim("f", "Northvale's mayor wrote the transit levy to benefit his donors.", 3, "No evidence presented.") ] },
+      { sentence: "The levy doubles everyone's taxes.", items: [
+        claim("g", "The transit levy doubles every resident's taxes.", 4,
+          "Contradicted by the bill text, which sets the levy at 0.5%.",
+          [exhibit("https://example.org/northvale/bills/transit-levy", "primary", "Section 2(a)")]) ] },
+      { sentence: "The council approved the levy in a 5-4 vote last month.", items: [
+        { ...claim(null, "Northvale's council approved the transit levy 5-4 in September 2026.", null, "Waiting for research."), block_id: undefined } ] },
+      { sentence: "A local group says the newcomers are organizing a secret pet market on weekends.", items: [
+        claim("h", "Brookhaven newcomers are organizing a secret pet market on weekends.", 3,
+          "Extraordinary claim, no evidence presented.") ] },
+    ].map((r, index) => ({ ...r, index, status: "remembered" }));
+  </script>
+  <script src="../extension/content/marks.js"></script>
+  <script>
+    window.__send({ type: "tv-render", results: RESULTS, status: "done" }, {}, () => {});
+  </script>
+</body>
+</html>

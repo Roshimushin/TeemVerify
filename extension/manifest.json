@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TeemVerify (prototype)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Labels claims on the page with the four Verify tiers. Personal prototype.",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": ["https://hfbmawmztowmjkphbqmg.supabase.co/*"],
@@ -13,5 +13,11 @@
     "default_title": "TeemVerify",
     "default_popup": "popup.html"
   },
-  "options_page": "options.html"
+  "options_page": "options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["content/verify.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

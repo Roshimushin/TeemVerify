@@ -16,6 +16,26 @@ const MIN_WORDS = 4;
 
 async function save(key, progress) {
   await chrome.storage.session.set({ [key]: progress });
+  await showOnPage(Number(key.split(":")[1]), progress);
+}
+
+// Draws the latest results on the page itself (content/marks.js), injecting it the first
+// time. Fails quietly if the tab has moved on to another page.
+async function showOnPage(tabId, progress) {
+  try {
+    const injected = await chrome.tabs.sendMessage(tabId, { type: "tv-ping" }).catch(() => false);
+    if (!injected) {
+      await chrome.scripting.insertCSS({ target: { tabId }, files: ["content/verify.css"] });
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["content/marks.js"] });
+    }
+    await chrome.tabs.sendMessage(tabId, {
+      type: "tv-render",
+      results: progress.results,
+      status: progress.status,
+    });
+  } catch (err) {
+    console.warn("Couldn't draw labels on the page:", err);
+  }
 }
 
 // Reads the page's images and returns their text as sentences, image by image.
@@ -140,8 +160,9 @@ async function checkNow(tabId, indexes) {
 // Messages:
 //   { type: "api", action, payload }      -> { ok, data } or { ok: false, error }
 //   { type: "lookupPage", tabId, page }   -> starts a lookup; progress appears in session storage
-//   { type: "checkNow", tabId, indexes }  -> researches those sentences now
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+//   { type: "checkNow", tabId, indexes }  -> researches those sentences now (from the page's
+//                                            claim card, tabId is the sender's tab)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "api") {
     callVerifyApi(message.action, message.payload)
       .then((data) => sendResponse({ ok: true, data }))
@@ -153,7 +174,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({ ok: true });
   }
   if (message?.type === "checkNow") {
-    checkNow(message.tabId, message.indexes);
+    checkNow(message.tabId ?? sender.tab?.id, message.indexes);
     sendResponse({ ok: true });
   }
   return false;

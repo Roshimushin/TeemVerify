@@ -244,6 +244,29 @@ export async function submitResults(
   return { saved };
 }
 
+// ---------- claim card details ----------
+
+export async function blockDetail(supabase: SupabaseClient, { block_id }: { block_id: string }) {
+  if (!block_id) throw new Error("block_detail needs block_id");
+  const { data: block, error } = await supabase
+    .from("blocks")
+    .select("id, claim_text, tier, status, scope, as_of, reason, created_at, updated_at")
+    .eq("id", block_id)
+    .single();
+  if (error) throw error;
+  const { data: history, error: historyError } = await supabase
+    .from("tier_history")
+    .select("old_tier, new_tier, reason, actor, created_at")
+    .eq("block_id", block_id)
+    .order("created_at", { ascending: true });
+  if (historyError) throw historyError;
+  const { count: sightings } = await supabase
+    .from("sightings")
+    .select("id", { count: "exact", head: true })
+    .eq("block_id", block_id);
+  return { block, exhibits: await exhibitsFor(supabase, block_id), history, sightings: sightings ?? 0 };
+}
+
 // ---------- Claude calls ----------
 
 export async function spentToday(supabase: SupabaseClient): Promise<number> {
