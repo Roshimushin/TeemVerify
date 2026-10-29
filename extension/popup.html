@@ -4,13 +4,19 @@
   <meta charset="utf-8">
   <title>TeemVerify</title>
   <link rel="stylesheet" href="ui.css">
-  <style>main { width: 280px; padding: 16px; }</style>
+  <style>
+    main { width: 320px; padding: 16px; }
+    #preview { margin: 12px 0 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
+    #preview li { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.4; }
+  </style>
 </head>
 <body>
   <main>
     <h1>TeemVerify</h1>
     <p id="status" class="muted" role="status">Checking connection…</p>
-    <button id="check" disabled title="Coming in the next build step">Check this page</button>
+    <button id="check" disabled>Check this page</button>
+    <p id="result" class="muted" role="status" hidden></p>
+    <ul id="preview" hidden></ul>
     <div class="row"><a href="options.html" target="_blank">Settings</a></div>
   </main>
   <script type="module" src="popup.js"></script>
