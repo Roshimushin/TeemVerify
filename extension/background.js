@@ -157,17 +157,90 @@ async function checkNow(tabId, indexes) {
   await save(key, progress);
 }
 
+// ---------- Becket's feedback from the claim card ----------
+
+const FEEDBACK_ACTIONS = ["confirm", "challenge", "reword", "prioritize"];
+
+// Sends one feedback action, then writes any change into this tab's results so the page
+// redraws with the new label.
+async function feedback(tabId, action, payload) {
+  if (!FEEDBACK_ACTIONS.includes(action)) throw new Error(`Unknown feedback: ${action}`);
+  const key = `check:${tabId}`;
+  const { [key]: progress } = await chrome.storage.session.get(key);
+  const { dailyCapUsd } = await getSettings();
+  const data = await callVerifyApi(action, { ...payload, url: progress?.url, daily_cap_usd: dailyCapUsd });
+  if (progress && data.patch && payload.block_id) {
+    for (const result of progress.results) {
+      result.items = result.items.map((i) => i.block_id === payload.block_id ? { ...i, ...data.patch } : i);
+    }
+    await save(key, progress);
+  }
+  return data;
+}
+
+// "Add claim": text Becket selected on the page becomes a sentence of its own. It's looked up
+// like any other (free if known), then checked now or put at the front of the research queue.
+async function addClaim(tabId, url, text, mode) {
+  const key = `check:${tabId}`;
+  let { [key]: progress } = await chrome.storage.session.get(key);
+  if (progress?.status === "running") throw new Error("Wait until the page check finishes.");
+  if (!progress || progress.url !== url) {
+    progress = { url, status: "done", task: "", done: 0, total: 0, results: [], spentTodayUsd: null, error: null };
+  }
+  const { dailyCapUsd } = await getSettings();
+  const index = progress.results.reduce((next, r) => Math.max(next, r.index + 1), 0);
+  const unchecked = { kind: "claim", text, tier: null, reason: "Waiting for research.", scope: null, as_of: null, resolve_by: null, exhibits: [], quote: null };
+  const result = { index, sentence: text, status: "queued", items: [unchecked], added: true };
+  progress.results.push(result);
+
+  const reply = await callVerifyApi("lookup", { url, sentences: [text], daily_cap_usd: dailyCapUsd });
+  const [found] = reply.results;
+  if (found?.items?.length) Object.assign(result, { status: found.status, items: found.items });
+  progress.spentTodayUsd = reply.spent_today_usd;
+  await save(key, progress);
+
+  // Already labelled from memory or the library: nothing more to do.
+  const known = ["remembered", "from_library"].includes(result.status) &&
+    result.items.every((i) => i.kind !== "claim" || i.tier);
+  if (known) return { status: result.status };
+  if (mode === "now") {
+    // Runs on in the background; the page shows the spinner and then the label.
+    checkNow(tabId, [index]);
+    return { status: "checking" };
+  }
+  const picked = await callVerifyApi("prioritize", { sentence: text, url });
+  // A selection first sorted as a non-claim is still researched, since Becket picked it.
+  if (!result.items.some((i) => i.kind === "claim")) result.items = picked.items;
+  result.status = "queued";
+  await save(key, progress);
+  return { status: "queued", picked_waiting: picked.picked_waiting };
+}
+
 // Messages:
 //   { type: "api", action, payload }      -> { ok, data } or { ok: false, error }
 //   { type: "lookupPage", tabId, page }   -> starts a lookup; progress appears in session storage
 //   { type: "checkNow", tabId, indexes }  -> researches those sentences now (from the page's
 //                                            claim card, tabId is the sender's tab)
+//   { type: "feedback", action, payload } -> confirm / challenge / reword / prioritize, from a card
+//   { type: "addClaim", text, mode }      -> selected text, checked "now" or researched "later"
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "api") {
     callVerifyApi(message.action, message.payload)
       .then((data) => sendResponse({ ok: true, data }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true; // keeps the channel open for the async reply
+  }
+  if (message?.type === "feedback") {
+    feedback(sender.tab?.id, message.action, message.payload)
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message?.type === "addClaim") {
+    addClaim(sender.tab?.id, sender.tab?.url, message.text, message.mode)
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
   }
   if (message?.type === "lookupPage") {
     lookupPage(message.tabId, message.page);

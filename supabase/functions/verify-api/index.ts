@@ -13,10 +13,15 @@
 //   submit_results { results }                  -> research findings from Claude Code
 //   read_images    { images, daily_cap_usd }    -> text found in up to 4 post images (see images.ts)
 //   block_detail   { block_id }                 -> a stored claim with its exhibits and tier history
+//   confirm        { block_id }                 -> Becket marks a claim reviewed (see feedback.ts)
+//   challenge      { block_id, reason_type, note?, link?, daily_cap_usd } -> saved, then re-checked
+//   reword         { block_id, text, daily_cap_usd } -> new wording, kept only if it means the same
+//   prioritize     { sentence, url? }           -> "Research this": front of the research queue
 //   spend          {}                           -> what Claude calls have cost so far today (UTC)
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { blockDetail, checkSentences, lookupSentences, queueNext, spentToday, submitResults } from "./check.ts";
+import { challengeBlock, confirmBlock, prioritize, rewordBlock } from "./feedback.ts";
 import { readImages } from "./images.ts";
 
 const supabase = createClient(
@@ -140,6 +145,14 @@ Deno.serve(async (req) => {
         return reply(await queueNext(supabase, body));
       case "submit_results":
         return reply(await submitResults(supabase, embed, body));
+      case "confirm":
+        return reply(await confirmBlock(supabase, body));
+      case "challenge":
+        return reply(await challengeBlock(supabase, embed, body));
+      case "reword":
+        return reply(await rewordBlock(supabase, embed, body));
+      case "prioritize":
+        return reply(await prioritize(supabase, body));
       case "spend":
         return reply({ spent_today_usd: await spentToday(supabase) });
       default:

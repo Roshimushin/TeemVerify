@@ -487,6 +487,126 @@ html.tv-xray .tv-chip {
   cursor: default;
 }
 
+/* Quieter buttons beside a main action (Research this, Cancel) */
+.tv-action.secondary {
+  border-color: var(--tv-border);
+  background: none;
+  color: var(--tv-text) !important;
+}
+
+/* ---------- Feedback on a card: Confirm, Challenge, Reword ---------- */
+
+.tv-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.tv-feedback button {
+  padding: 4px 10px;
+  border: 1px solid var(--tv-border);
+  border-radius: 999px;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tv-feedback button:hover {
+  border-color: var(--tv-muted);
+}
+
+.tv-form {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--tv-border);
+  border-radius: 10px;
+}
+
+.tv-form label {
+  display: block;
+  margin: 8px 0 4px;
+  color: var(--tv-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tv-form label:first-child {
+  margin-top: 0;
+}
+
+.tv-form select,
+.tv-form textarea,
+.tv-form input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--tv-border);
+  border-radius: 6px;
+  background: var(--tv-surface);
+  color: var(--tv-text);
+  font: 13px/1.4 var(--tv-font);
+}
+
+.tv-form textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.tv-form .tv-action {
+  margin-right: 6px;
+}
+
+/* What happened after a feedback action ("Challenge upheld: …") */
+.tv-notice {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--tv-chip-bg);
+  font-size: 13px;
+}
+
+.tv-notice.error {
+  background: var(--tv-tier4-bg);
+}
+
+/* ---------- Add claim: a button beside selected text ---------- */
+
+.tv-select {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--tv-border);
+  border-radius: 999px;
+  background: var(--tv-surface);
+  box-shadow: var(--tv-shadow);
+  font-size: 12px;
+}
+
+.tv-select button {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tv-select button:hover {
+  background: var(--tv-chip-bg);
+}
+
+.tv-select .tv-select-main {
+  background: var(--tv-tier1);
+  color: #fff !important;
+}
+
+.tv-select .tv-select-main:hover {
+  background: var(--tv-tier1);
+}
+
 .tv-more {
   border: 0;
   background: none;

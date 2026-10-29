@@ -202,8 +202,10 @@ export async function checkSentences(
 export async function queueNext(supabase: SupabaseClient, { limit = 10 }: { limit?: number }) {
   const { data, error } = await supabase
     .from("claim_queue")
-    .select("id, sentence_text, page_url, seen_count, queued_at")
+    .select("id, sentence_text, page_url, seen_count, queued_at, picked_at")
     .eq("status", "queued")
+    // Becket's picks first, in the order picked; then the most-seen claims.
+    .order("picked_at", { ascending: true, nullsFirst: false })
     .order("seen_count", { ascending: false })
     .order("queued_at", { ascending: true })
     .limit(Math.min(Number(limit) || 10, 50));
@@ -266,7 +268,24 @@ export async function blockDetail(supabase: SupabaseClient, { block_id }: { bloc
     .from("sightings")
     .select("id", { count: "exact", head: true })
     .eq("block_id", block_id);
-  return { block, exhibits: await exhibitsFor(supabase, block_id), history, sightings: sightings ?? 0 };
+  const { data: challenges } = await supabase
+    .from("challenges")
+    .select("reason_type, note, link, status, resolution, old_tier, new_tier, created_at")
+    .eq("block_id", block_id)
+    .order("created_at", { ascending: true });
+  const { data: wording } = await supabase
+    .from("wording_history")
+    .select("old_text, new_text, actor, created_at")
+    .eq("block_id", block_id)
+    .order("created_at", { ascending: true });
+  return {
+    block,
+    exhibits: await exhibitsFor(supabase, block_id),
+    history,
+    challenges: challenges ?? [],
+    wording: wording ?? [],
+    sightings: sightings ?? 0,
+  };
 }
 
 // ---------- Claude calls ----------
@@ -282,7 +301,7 @@ export async function spentToday(supabase: SupabaseClient): Promise<number> {
   return data.reduce((sum, row) => sum + Number(row.cost_usd), 0);
 }
 
-type Purpose = "triage" | "compare" | "check" | "image";
+type Purpose = "triage" | "compare" | "check" | "image" | "recheck";
 
 async function logSpend(supabase: SupabaseClient, purpose: Purpose, usage: Anthropic.Usage) {
   const searches = usage.server_tool_use?.web_search_requests ?? 0;
@@ -348,7 +367,7 @@ async function triage(supabase: SupabaseClient, sentences: string[]): Promise<Ma
   ]));
 }
 
-async function compare(supabase: SupabaseClient, pairs: [string, string][]): Promise<[number, string][]> {
+export async function compare(supabase: SupabaseClient, pairs: [string, string][]): Promise<[number, string][]> {
   const list = pairs.map(([a, b], i) => `${i}. A: ${a}\n   B: ${b}`).join("\n");
   const out = await ask(supabase, "compare", {
     system: COMPARE_SYSTEM,
@@ -401,7 +420,7 @@ function nonFactItem(kind: Kind, text: string, resolveBy: string | null): Item {
   return { kind, text, tier: null, reason: "", scope: null, as_of: null, resolve_by: resolveBy, exhibits: [] };
 }
 
-async function exhibitsFor(supabase: SupabaseClient, blockId: string) {
+export async function exhibitsFor(supabase: SupabaseClient, blockId: string) {
   const { data, error } = await supabase
     .from("block_exhibits")
     .select("exhibits(source_url, location, source_type)")
@@ -415,7 +434,7 @@ async function exhibitsFor(supabase: SupabaseClient, blockId: string) {
   }));
 }
 
-async function remember(supabase: SupabaseClient, sentenceHash: string, sentence: string, items: Item[], pending: boolean) {
+export async function remember(supabase: SupabaseClient, sentenceHash: string, sentence: string, items: Item[], pending: boolean) {
   const kinds = new Set(items.map((i) => i.kind));
   const { error } = await supabase.from("sentence_memory").upsert({
     sentence_hash: sentenceHash,
@@ -442,7 +461,7 @@ async function touchMemory(supabase: SupabaseClient, sentenceHash: string, url: 
   }
 }
 
-async function enqueue(supabase: SupabaseClient, sentenceHash: string, sentence: string, url: string) {
+export async function enqueue(supabase: SupabaseClient, sentenceHash: string, sentence: string, url: string) {
   const { error } = await supabase.from("claim_queue")
     .upsert({ sentence_hash: sentenceHash, sentence_text: sentence, page_url: url }, { onConflict: "sentence_hash", ignoreDuplicates: true });
   if (error) throw error;
@@ -536,17 +555,17 @@ function validate(sentences: string[], max: number, cap: number) {
 // spacing and curly quotes), so the page never marks words that aren't there.
 function fitQuote(sentence: string, quote: string | null | undefined): string | null {
   if (!quote) return null;
-  const plain = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim().toLowerCase();
+  const plain = (s: string) => s.replace(/[â€˜â€™]/g, "'").replace(/[â€œâ€]/g, '"').replace(/\s+/g, " ").trim().toLowerCase();
   const words = plain(quote);
   return words && plain(sentence).includes(words) ? quote.trim() : null;
 }
 
-function today() {
+export function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
 // Fingerprint of a sentence, ignoring case and spacing differences.
-async function hash(sentence: string) {
+export async function hash(sentence: string) {
   const normalized = sentence.toLowerCase().replace(/\s+/g, " ").trim();
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");

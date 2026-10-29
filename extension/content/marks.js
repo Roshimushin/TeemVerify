@@ -34,6 +34,15 @@
   };
   const ACTORS = { model: "AI review", claude_code: "AI review (research queue)", becket: "Becket" };
   const CHECK_NOW_LABEL = "Check now (about 2¢)";
+  const RECHECK_LABEL = "Re-check (about 5¢)";
+  const RESEARCH_LATER_LABEL = "Research this (free, later)";
+  // Why a label is challenged, in the words the card shows (values match the challenges table).
+  const REASON_TYPES = [
+    ["new_evidence", "I have new evidence"],
+    ["wording_or_scope", "The wording or scope is off"],
+    ["reasoning", "The reasoning doesn't hold"],
+    ["outdated", "It's out of date"],
+  ];
 
   const HINTS = {
     tier1: "Tier 1, click for sources",
@@ -225,7 +234,8 @@
       }
       const items = result.items.filter((i) => i.kind !== "not_a_claim");
       if (!items.length) continue;
-      const spot = findSentence(index, result.sentence, used);
+      // Text Becket added may overlap a sentence already marked, so it may reuse that spot.
+      const spot = findSentence(index, result.sentence, result.added ? new Set() : used);
       if (!spot) continue;
       const sentenceRange = rangeAt(index, spot);
 
@@ -349,7 +359,9 @@
 
   addEventListener("scroll", () => {
     // The card would drift away from its sentence, so scrolling the page closes it.
-    closeCard();
+    // A card with a form being filled in stays put, so nothing typed is lost.
+    if (!card?.querySelector(".tv-form")) closeCard();
+    hidePicker();
     setHovered(null);
     requestAnimationFrame(positionBadges);
   }, { passive: true, capture: true });
@@ -438,20 +450,44 @@
   // ---------- the card ----------
 
   let card = null;
+  // What the open card shows, so it can be redrawn with fresh results after feedback.
+  let lastCard = null;
+  // A line to show at the top of an item the next time its card is drawn ("Confirmed.").
+  const notices = new Map();
 
   function closeCard() {
     card?.remove();
     card = null;
   }
 
+  // Items are found again after a redraw by their library id, or by their words.
+  function itemKey(item) {
+    return item.block_id ?? `${item.kind}:${item.text}`;
+  }
+
+  function reopenCard() {
+    if (!lastCard) return;
+    const results = state.results.filter((r) => lastCard.indexes.includes(r.index));
+    const focus = results.flatMap((r) => r.items).find((i) => itemKey(i) === lastCard.focus);
+    openCard(results, lastCard.anchor, lastCard.quoteLabel, focus, { flash: false });
+  }
+
   // Shows every labelled item of the given sentence results, so a sentence reads the same
   // whichever of its marks or chips was tapped. `anchor` is a DOMRect; `focusItem` (the
   // tapped part) goes first, and its words light up briefly in the page.
-  function openCard(results, anchor, quoteLabel, focusItem) {
+  function openCard(results, anchor, quoteLabel, focusItem, { flash: flashFocus = true } = {}) {
     closeCard();
+    lastCard = { indexes: results.map((r) => r.index), anchor, quoteLabel, focus: focusItem && itemKey(focusItem) };
     card = el("div", "tv-card");
     card.setAttribute("role", "dialog");
     card.setAttribute("aria-label", "Verify label");
+    // Typing in the card's forms mustn't trigger the site's own keyboard shortcuts.
+    for (const type of ["keydown", "keyup", "keypress"]) {
+      card.addEventListener(type, (event) => {
+        event.stopPropagation();
+        if (type === "keydown" && event.key === "Escape") closeCard();
+      });
+    }
 
     const head = el("div", "tv-card-head");
     const close = el("button", "tv-close", "×");
@@ -474,7 +510,7 @@
 
     layer.append(card);
     placeCard(anchor);
-    if (focusItem) flash(focusItem);
+    if (focusItem && flashFocus) flash(focusItem);
   }
 
   let flashTimer = 0;
@@ -501,16 +537,27 @@
     const view = el("div", "tv-item");
     const head = el("div", "tv-card-head");
 
+    const notice = notices.get(itemKey(item));
+    notices.delete(itemKey(item));
+    const noticeView = notice && el("p", notice.error ? "tv-notice error" : "tv-notice", notice.text);
+
     if (item.kind === "claim" && item.tier == null) {
       head.append(el("span", "tv-tier unchecked", UNCHECKED.name));
-      view.append(head, el("p", "tv-claim", item.text), el("p", "tv-meaning", UNCHECKED.meaning));
+      view.append(head);
+      if (noticeView) view.append(noticeView);
+      view.append(el("p", "tv-claim", item.text), el("p", "tv-meaning", UNCHECKED.meaning));
       const button = el("button", "tv-action", CHECK_NOW_LABEL);
       button.addEventListener("click", () => {
         button.disabled = true;
         button.textContent = "Checking…";
         chrome.runtime.sendMessage({ type: "checkNow", indexes: [result.index] });
       });
-      view.append(button);
+      // Becket's picks go to the front of the research queue, worked for free by Claude Code.
+      const later = el("button", "tv-action secondary", RESEARCH_LATER_LABEL);
+      later.title = "Moves this claim to the front of the research queue";
+      later.addEventListener("click", () => sendFeedback(item, later, view, "prioritize", { sentence: result.sentence },
+        (data) => ({ text: `In the research queue, at the front (${data.picked_waiting} picked so far). Its label appears here once it's researched.` })));
+      view.append(button, document.createTextNode(" "), later);
       return view;
     }
 
@@ -530,7 +577,9 @@
 
     const tier = TIERS[item.tier];
     head.append(el("span", `tv-tier t${item.tier}`, tier.name), el("span", "tv-badge", "AI draft"));
-    view.append(head, el("p", "tv-claim", item.text), el("p", "tv-meaning", tier.meaning));
+    view.append(head);
+    if (noticeView) view.append(noticeView);
+    view.append(el("p", "tv-claim", item.text), el("p", "tv-meaning", tier.meaning));
     if (item.reason) view.append(el("p", "tv-reason", item.reason));
     if (item.scope || item.as_of) {
       const scope = [item.scope, item.as_of && `as of ${formatDate(item.as_of)}`].filter(Boolean).join(", ");
@@ -540,12 +589,165 @@
 
     // Tier history and review status come from the library, loaded when the card opens.
     if (item.block_id) {
+      view.append(feedbackView(item));
       const history = el("div", "tv-section");
       history.append(el("h3", "", "Tier history"), el("p", "tv-meaning", "Loading…"));
       view.append(history);
-      loadDetail(item.block_id, history, head);
+      loadDetail(item.block_id, history, view);
     }
     return view;
+  }
+
+  // ---------- feedback: Confirm, Challenge, Reword ----------
+
+  function feedbackView(item) {
+    const wrap = el("div");
+    const row = el("div", "tv-feedback");
+    const confirm = el("button", "tv-confirm", "Confirm");
+    confirm.title = "The label is right: mark it reviewed";
+    const challenge = el("button", "", "Challenge");
+    challenge.title = "The label is wrong or incomplete: re-check it with your evidence";
+    const reword = el("button", "", "Reword");
+    reword.title = "Suggest more precise wording";
+    row.append(confirm, challenge, reword);
+    wrap.append(row);
+
+    confirm.addEventListener("click", () => sendFeedback(item, confirm, wrap, "confirm", { block_id: item.block_id },
+      () => ({ text: "Confirmed. Marked as reviewed, and logged in the tier history." })));
+    challenge.addEventListener("click", () => showForm(wrap, challengeForm(item)));
+    reword.addEventListener("click", () => showForm(wrap, rewordForm(item)));
+    return wrap;
+  }
+
+  function showForm(wrap, form) {
+    wrap.querySelector(".tv-form")?.remove();
+    wrap.append(form);
+    revealForm(form);
+  }
+
+  // Forms open below the card's fold, so they're scrolled into view and focused.
+  function revealForm(form) {
+    form.scrollIntoView({ block: "nearest" });
+    form.querySelector("select, textarea, input")?.focus({ preventScroll: true });
+  }
+
+  function swapForm(oldForm, newForm) {
+    oldForm.replaceWith(newForm);
+    revealForm(newForm);
+  }
+
+  function field(form, label, control) {
+    const id = `tv-field-${Math.random().toString(36).slice(2)}`;
+    const text = el("label", "", label);
+    text.htmlFor = id;
+    control.id = id;
+    form.append(text, control);
+    return control;
+  }
+
+  function challengeForm(item, suggestedWording) {
+    const form = el("div", "tv-form");
+    const reason = field(form, "What's wrong with it?", el("select"));
+    for (const [value, label] of REASON_TYPES) {
+      const option = el("option", "", label);
+      option.value = value;
+      reason.append(option);
+    }
+    const note = field(form, "Your note", el("textarea"));
+    note.placeholder = "What the label gets wrong, in a sentence or two";
+    const link = field(form, "Link to evidence (optional)", el("input"));
+    link.type = "url";
+    link.placeholder = "https://…";
+    if (suggestedWording) {
+      reason.value = "wording_or_scope";
+      note.value = `More precise wording: "${suggestedWording}"`;
+    }
+
+    const submit = el("button", "tv-action", RECHECK_LABEL);
+    const cancel = el("button", "tv-action secondary", "Cancel");
+    cancel.addEventListener("click", () => form.remove());
+    submit.addEventListener("click", () => {
+      if (!note.value.trim() && !link.value.trim()) {
+        showError(form, "Add a note or a link, so the re-check knows what to look at.");
+        return;
+      }
+      sendFeedback(item, submit, form, "challenge",
+        { block_id: item.block_id, reason_type: reason.value, note: note.value, link: link.value },
+        (data) => ({
+          text: !data.rechecked ? data.response
+            : `${data.outcome === "upheld" ? "Challenge upheld" : "Challenge not upheld"}: ${data.response}`,
+        }),
+        "Re-checking… this can take a minute");
+    });
+    form.append(el("p", "tv-meaning", "Claude re-checks the claim with your note and link, by the same rules. The label changes only if the evidence calls for it."),
+      submit, cancel);
+    return form;
+  }
+
+  function rewordForm(item) {
+    const form = el("div", "tv-form");
+    const text = field(form, "More precise wording", el("textarea"));
+    text.value = item.text;
+    const submit = el("button", "tv-action", "Save wording");
+    const cancel = el("button", "tv-action secondary", "Cancel");
+    cancel.addEventListener("click", () => form.remove());
+    submit.addEventListener("click", () => {
+      const wording = text.value.trim();
+      if (!wording) return;
+      sendFeedback(item, submit, form, "reword", { block_id: item.block_id, text: wording }, (data) => {
+        if (data.saved) return { text: "Wording saved. The tier stays, since it says the same thing." };
+        if (data.unchanged) return { text: "That's the wording it already has." };
+        // New wording that says something else needs its own check before it can keep a tier.
+        swapForm(form, challengeOffer(item, wording, data.relation));
+        return null;
+      }, "Comparing…");
+    });
+    form.append(el("p", "tv-meaning", "Same meaning, said more precisely. If the new wording changes what the claim says, it needs a re-check instead."),
+      submit, cancel);
+    return form;
+  }
+
+  function challengeOffer(item, wording, relation) {
+    const form = el("div", "tv-form");
+    form.append(el("p", "tv-notice",
+      relation === "opposite"
+        ? "That wording says the opposite of the checked claim, so its tier can't carry over."
+        : "That wording says something different from the checked claim, so its tier might not fit."));
+    const recheck = el("button", "tv-action", "Challenge with this wording");
+    const cancel = el("button", "tv-action secondary", "Cancel");
+    recheck.addEventListener("click", () => swapForm(form, challengeForm(item, wording)));
+    cancel.addEventListener("click", () => form.remove());
+    form.append(recheck, cancel);
+    return form;
+  }
+
+  function showError(place, text) {
+    place.querySelector(".tv-notice.error")?.remove();
+    place.prepend(el("p", "tv-notice error", text));
+  }
+
+  // Sends one feedback action through the background worker. On success the card is redrawn
+  // from the updated results with `describe(data)` shown on the item; null keeps the card as is.
+  async function sendFeedback(item, button, place, action, payload, describe, busyText = "Saving…") {
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = busyText;
+    let reply;
+    try {
+      reply = await chrome.runtime.sendMessage({ type: "feedback", action, payload });
+    } catch (err) {
+      reply = { ok: false, error: err.message };
+    }
+    if (!reply?.ok) {
+      button.disabled = false;
+      button.textContent = label;
+      showError(place, reply?.error ?? "Something went wrong. Try again.");
+      return;
+    }
+    const notice = describe(reply.data);
+    if (!notice) return;
+    notices.set(itemKey(item), notice);
+    reopenCard();
   }
 
   function exhibitsView(exhibits) {
@@ -587,22 +789,34 @@
     return section;
   }
 
-  async function loadDetail(blockId, section, head) {
+  async function loadDetail(blockId, section, view) {
     const reply = await chrome.runtime.sendMessage({ type: "api", action: "block_detail", payload: { block_id: blockId } });
     section.replaceChildren(el("h3", "", "Tier history"));
     if (!reply?.ok) {
       section.append(el("p", "tv-meaning", "Couldn't load the history."));
       return;
     }
-    const { block, history, sightings } = reply.data;
+    const { block, history, challenges = [], wording = [], sightings } = reply.data;
     if (block.status === "reviewed") {
-      head.querySelector(".tv-badge")?.replaceWith(el("span", "tv-badge", "Reviewed"));
+      view.querySelector(".tv-card-head .tv-badge")?.replaceWith(el("span", "tv-badge", "Reviewed"));
+      view.querySelector(".tv-confirm")?.remove();
     }
     const list = el("ul");
-    const rows = history.map((h) => {
-      const change = h.old_tier == null ? `Tier ${h.new_tier}` : `Tier ${h.old_tier} → Tier ${h.new_tier}`;
-      return `${formatDate(h.created_at)} · ${change} · ${ACTORS[h.actor] ?? h.actor}`;
-    });
+    // One timeline: tier changes, confirmations, challenges and rewordings, oldest first.
+    const reasons = { new_evidence: "new evidence", wording_or_scope: "wording or scope", reasoning: "reasoning", outdated: "out of date" };
+    const events = [
+      ...history.map((h) => {
+        const change = h.old_tier == null ? `Tier ${h.new_tier}`
+          : h.old_tier === h.new_tier ? `Tier ${h.new_tier} confirmed`
+          : `Tier ${h.old_tier} → Tier ${h.new_tier}`;
+        return [h.created_at, `${change} · ${ACTORS[h.actor] ?? h.actor}`];
+      }),
+      ...challenges.map((c) => [c.created_at,
+        `Challenged (${reasons[c.reason_type] ?? c.reason_type})` +
+        (c.resolution ? `. ${c.resolution}` : " · waiting for a re-check")]),
+      ...wording.map((w) => [w.created_at, `Reworded by ${ACTORS[w.actor] ?? w.actor} · was "${w.old_text}"`]),
+    ].sort(([a], [b]) => new Date(a) - new Date(b));
+    const rows = events.map(([at, text]) => `${formatDate(at)} · ${text}`);
     // Skimmable first: the latest three, with the rest a tap away.
     const shown = rows.slice(-3);
     for (const row of shown) list.append(el("li", "", row));
@@ -664,6 +878,8 @@
 
   document.addEventListener("click", (event) => {
     if (event.composedPath().includes(host)) return;
+    // The click that ends a text selection is for "Add claim", not for opening a mark.
+    if (!getSelection()?.isCollapsed) return;
     const chip = event.target.closest?.("[data-tv-chip]");
     if (chip) {
       event.preventDefault();
@@ -726,7 +942,67 @@
   }, { passive: true });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeCard();
+    if (event.key === "Escape") {
+      closeCard();
+      hidePicker();
+    }
+  });
+
+  // ---------- Add claim: select any text and send it for checking ----------
+
+  const MIN_PICK_WORDS = 3;
+  const MAX_PICK_CHARS = 600;
+  const picker = el("div", "tv-select");
+  picker.hidden = true;
+  layer.append(picker);
+  let picked = "";
+
+  function hidePicker() {
+    picker.hidden = true;
+    picked = "";
+  }
+
+  function showPickerFor(text, rect) {
+    picked = text;
+    picker.replaceChildren();
+    const now = el("button", "tv-select-main", "Check now · 2¢");
+    now.title = "Research this text right away";
+    const later = el("button", "", "Research later");
+    later.title = "Free: puts it at the front of the research queue";
+    now.addEventListener("click", () => addClaim("now"));
+    later.addEventListener("click", () => addClaim("later"));
+    picker.append(now, later);
+    picker.hidden = false;
+    const width = picker.offsetWidth;
+    picker.style.left = `${Math.min(Math.max(8, rect.left), innerWidth - width - 8)}px`;
+    picker.style.top = `${rect.bottom + 8 + picker.offsetHeight > innerHeight ? rect.top - picker.offsetHeight - 8 : rect.bottom + 8}px`;
+  }
+
+  async function addClaim(mode) {
+    const text = picked;
+    picker.replaceChildren(el("span", "", mode === "now" ? "Checking…" : "Adding…"));
+    const reply = await chrome.runtime.sendMessage({ type: "addClaim", text, mode }).catch((err) => ({ ok: false, error: err.message }));
+    picker.replaceChildren(el("span", "", reply?.ok
+      ? (mode === "now" ? "Added. Its label appears when the check is done." : "Added to the front of the research queue.")
+      : reply?.error ?? "Couldn't add it."));
+    setTimeout(hidePicker, 2500);
+  }
+
+  document.addEventListener("mouseup", (event) => {
+    if (event.composedPath().includes(host)) return;
+    // The selection settles after mouseup.
+    setTimeout(() => {
+      const selection = getSelection();
+      const text = selection?.toString().replace(/\s+/g, " ").trim() ?? "";
+      const inField = selection?.anchorNode?.parentElement?.closest("input, textarea, [contenteditable='true']");
+      if (!selection || selection.isCollapsed || inField || text.length > MAX_PICK_CHARS ||
+        text.split(" ").length < MIN_PICK_WORDS) {
+        hidePicker();
+        return;
+      }
+      closeCard();
+      showPickerFor(text, selection.getRangeAt(0).getBoundingClientRect());
+    }, 0);
   });
 
   // ---------- messages from the background worker ----------
