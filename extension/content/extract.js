@@ -8,18 +8,17 @@
     "h1", "h2", "h3", "h4", "p", "li", "blockquote", "figcaption", "td",
     "shreddit-post [slot='title']",
     "[data-testid='post-title']",
-    ".Gallery-Title", ".GalleryComment-body",
-    // Post descriptions (e.g. the poster's note under an Imgur image) are often plain divs.
-    "[class*='description' i]",
+    // Imgur: post title, the poster's note under each image, comments.
+    ".Gallery-Title", ".Gallery-Content--descr", ".GalleryComment-body",
   ].join(",");
 
-  // Page furniture that isn't content. Some sites (Imgur) build footers and menus from
-  // plain divs, so roles and footer class names count too.
+  // Page furniture that isn't content. Some sites (Imgur) build footers, sidebars of other
+  // posts and tooltips from plain divs, so roles and those class names count too.
   const SKIP_INSIDE = [
     "nav", "header", "footer", "aside", "form", "button", "script", "style", "noscript",
     "[aria-hidden='true']", "[hidden]",
     "[role='navigation']", "[role='banner']", "[role='contentinfo']", "[role='menu']", "[role='tablist']",
-    "[class*='footer' i]",
+    "[class*='footer' i]", "[class*='sidebar' i]", "[class*='tooltip' i]",
   ].join(",");
 
   // Sentences that are labels or legal lines, not claims: short all-caps menu text
