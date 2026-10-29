@@ -48,6 +48,7 @@
     marks: [], // { range, category, result }
     chips: [], // { element, result, item }
     images: [], // { element, badge, results }
+    darkAreas: [], // elements tagged .tv-on-dark
   };
   window.__teemverify = state;
   const xrayKey = `xray:${location.hostname}`;
@@ -169,6 +170,8 @@
     for (const name of HIGHLIGHTS) CSS.highlights.delete(`tv-${name}`);
     for (const chip of state.chips) chip.element.remove();
     for (const image of state.images) image.badge.remove();
+    for (const element of state.darkAreas) element.classList.remove("tv-on-dark");
+    state.darkAreas = [];
     state.marks = [];
     state.chips = [];
     state.images = [];
@@ -213,8 +216,27 @@
     }
 
     for (const [url, results] of byImage) placeImageBadge(url, results);
+    markDarkAreas();
     applyHighlights();
     renderLegend();
+  }
+
+  // Marks need brighter colors on dark backgrounds. Light-colored text means a dark
+  // background (often a comment box, not the page body), so each marked sentence's
+  // surrounding element is tagged, and verify.css swaps the color tokens inside it.
+  function markDarkAreas() {
+    const ranges = [...state.marks.map((m) => m.range), ...state.chips.map((c) => c.element)];
+    for (const target of ranges) {
+      const element = target instanceof Range
+        ? target.commonAncestorContainer.parentElement ?? target.commonAncestorContainer
+        : target.parentElement;
+      if (!element || element.classList.contains("tv-on-dark")) continue;
+      const [r, g, b] = (getComputedStyle(element).color.match(/\d+(\.\d+)?/g) ?? []).map(Number);
+      if ((0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6) {
+        element.classList.add("tv-on-dark");
+        state.darkAreas.push(element);
+      }
+    }
   }
 
   function applyHighlights() {
@@ -278,7 +300,11 @@
     }
   }
 
-  addEventListener("scroll", () => requestAnimationFrame(positionBadges), { passive: true, capture: true });
+  addEventListener("scroll", () => {
+    // The card would drift away from its sentence, so scrolling the page closes it.
+    closeCard();
+    requestAnimationFrame(positionBadges);
+  }, { passive: true, capture: true });
   addEventListener("resize", () => requestAnimationFrame(positionBadges));
 
   // ---------- legend chip ----------
@@ -370,8 +396,10 @@
     card = null;
   }
 
-  // Shows every labelled item of the given sentence results. `anchor` is a DOMRect.
-  function openCard(results, anchor, quoteLabel) {
+  // Shows every labelled item of the given sentence results, so a sentence reads the same
+  // whichever of its marks or chips was tapped. `anchor` is a DOMRect; `focusKind` puts the
+  // tapped kind first (e.g. "opinion" when its chip was tapped).
+  function openCard(results, anchor, quoteLabel, focusKind) {
     closeCard();
     card = el("div", "tv-card");
     card.setAttribute("role", "dialog");
@@ -385,9 +413,14 @@
     card.append(head);
 
     for (const result of results) {
-      const items = result.items.filter((i) => i.kind !== "not_a_claim");
+      const items = result.items
+        .filter((i) => i.kind !== "not_a_claim")
+        .sort((a, b) => (b.kind === focusKind) - (a.kind === focusKind));
       if (!items.length) continue;
-      if (quoteLabel) card.append(el("p", "tv-quote", result.sentence));
+      if (quoteLabel || items.length > 1) card.append(el("p", "tv-quote", result.sentence));
+      if (items.length > 1) {
+        card.append(el("p", "tv-meaning", `This sentence has ${items.length} labelled parts:`));
+      }
       for (const item of items) card.append(itemView(item, result));
     }
 
@@ -573,7 +606,7 @@
       event.preventDefault();
       event.stopPropagation();
       const found = state.chips.find((c) => c.element === chip);
-      if (found) openCard([{ ...found.result, items: [found.item] }], chip.getBoundingClientRect());
+      if (found) openCard([found.result], chip.getBoundingClientRect(), undefined, found.item.kind);
       return;
     }
     // Links keep working: marks inside a link open only with Alt held.

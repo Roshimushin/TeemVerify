@@ -40,6 +40,21 @@
   --tv-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+/* Dark areas (Imgur, dark-mode Reddit): brighter marks and chips so they stay visible.
+   marks.js adds this class to the element around a marked sentence whose text is light,
+   so light and dark parts of the same page each get the right colors. */
+.tv-on-dark {
+  --tv-tier1-line: rgba(122, 167, 245, 0.9);
+  --tv-tier2: #9fb0d0;
+  --tv-tier3: #a3a9b4;
+  --tv-tier4: #ff6b66;
+  --tv-tier4-bg: rgba(255, 92, 87, 0.28);
+  --tv-unchecked: #7d838d;
+  --tv-chip-bg: #2a2e36;
+  --tv-chip-text: #d6dae1;
+  --tv-chip-border: #464c57;
+}
+
 @media (prefers-color-scheme: dark) {
   :host {
     --tv-surface: #1f2228;
