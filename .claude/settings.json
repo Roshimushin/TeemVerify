@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(/**)",
+      "PowerShell(Set-Location C:\\Users\\jbeck\\TeemVerify)",
+      "PowerShell(& 'C:\\Users\\jbeck\\tools\\supabase-cli\\supabase.exe' functions deploy verify-api *)",
+      "PowerShell(& 'C:\\Users\\jbeck\\tools\\supabase-cli\\supabase.exe' db query *)",
+      "PowerShell(git -C C:\\Users\\jbeck\\TeemVerify add *)",
+      "PowerShell(git -C C:\\Users\\jbeck\\TeemVerify commit *)",
+      "PowerShell(git -C C:\\Users\\jbeck\\TeemVerify push *)",
+      "PowerShell(git -C C:\\Users\\jbeck\\TeemVerify status *)",
+      "PowerShell(git -C C:\\Users\\jbeck\\TeemVerify log *)",
+      "PowerShell(& .\\scripts\\try-check.ps1 *)",
+      "PowerShell(& .\\scripts\\try-page.ps1 *)",
+      "PowerShell(& .\\scripts\\deploy.ps1)",
+      "PowerShell(powershell -NoProfile -File scripts/queue.ps1 *)",
+      "PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Users\\jbeck\\TeemVerify\\scripts\\export.ps1)",
+      "mcp__14223437-542c-4efc-a012-278c68a47afb__notion-fetch",
+      "mcp__14223437-542c-4efc-a012-278c68a47afb__notion-search",
+      "mcp__14223437-542c-4efc-a012-278c68a47afb__notion-update-page"
+    ]
+  }
+}
