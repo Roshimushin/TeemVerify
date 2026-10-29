@@ -5,6 +5,7 @@
 // Actions (POST JSON with an "action" field):
 //   match          { text, threshold?, count? } -> blocks whose meaning is close to text
 //   embed_missing  {}                           -> fills in embeddings for blocks that lack one
+//   export         {}                           -> every row of every block store table, as JSON
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -63,6 +64,36 @@ async function embedMissing() {
   return { embedded: blocks.length };
 }
 
+const EXPORT_TABLES = [
+  "blocks",
+  "exhibits",
+  "block_exhibits",
+  "tier_history",
+  "sightings",
+  "challenges",
+  "non_fact_tags",
+];
+const PAGE_SIZE = 1000;
+
+async function exportAll() {
+  const tables: Record<string, unknown[]> = {};
+  for (const table of EXPORT_TABLES) {
+    const rows: unknown[] = [];
+    // Supabase returns at most 1000 rows per request, so read in pages.
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from(table)
+        .select("*")
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      rows.push(...data);
+      if (data.length < PAGE_SIZE) break;
+    }
+    tables[table] = rows;
+  }
+  return { exported_at: new Date().toISOString(), tables };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return reply({ error: "Use POST" }, 405);
@@ -81,6 +112,8 @@ Deno.serve(async (req) => {
         return reply(await match(body.text, body.threshold, body.count));
       case "embed_missing":
         return reply(await embedMissing());
+      case "export":
+        return reply(await exportAll());
       default:
         return reply({ error: `Unknown action: ${body.action}` }, 400);
     }
