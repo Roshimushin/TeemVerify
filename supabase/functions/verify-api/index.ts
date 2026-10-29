@@ -6,8 +6,11 @@
 //   match          { text, threshold?, count? } -> blocks whose meaning is close to text
 //   embed_missing  {}                           -> fills in embeddings for blocks that lack one
 //   export         {}                           -> every row of every block store table, as JSON
+//   check          { url, sentences, daily_cap_usd } -> grades up to 6 sentences (see check.ts)
+//   spend          {}                           -> what Claude calls have cost so far today (UTC)
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { checkSentences, spentToday } from "./check.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -72,6 +75,7 @@ const EXPORT_TABLES = [
   "sightings",
   "challenges",
   "non_fact_tags",
+  "api_spend",
 ];
 const PAGE_SIZE = 1000;
 
@@ -114,6 +118,10 @@ Deno.serve(async (req) => {
         return reply(await embedMissing());
       case "export":
         return reply(await exportAll());
+      case "check":
+        return reply(await checkSentences(supabase, embed, body));
+      case "spend":
+        return reply({ spent_today_usd: await spentToday(supabase) });
       default:
         return reply({ error: `Unknown action: ${body.action}` }, 400);
     }

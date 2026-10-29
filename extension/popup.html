@@ -5,18 +5,33 @@
   <title>TeemVerify</title>
   <link rel="stylesheet" href="ui.css">
   <style>
-    main { width: 320px; padding: 16px; }
-    #preview { margin: 12px 0 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
-    #preview li { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.4; }
+    main { width: 360px; padding: 16px; }
+    #list { margin: 12px 0 0; padding: 0; list-style: none; max-height: 340px; overflow-y: auto; }
+    #list li { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.4; }
+    .sentence { margin-bottom: 4px; }
+    .item { display: flex; gap: 6px; align-items: baseline; margin-top: 2px; }
+    .badge {
+      flex: none;
+      padding: 1px 6px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .reason { color: var(--muted); }
   </style>
 </head>
 <body>
   <main>
     <h1>TeemVerify</h1>
     <p id="status" class="muted" role="status">Checking connection…</p>
-    <button id="check" disabled>Check this page</button>
+    <div class="row" style="margin-top: 0">
+      <button id="read" disabled>Read this page</button>
+      <button id="check" class="secondary" hidden>Check sentences</button>
+    </div>
     <p id="result" class="muted" role="status" hidden></p>
-    <ul id="preview" hidden></ul>
+    <ul id="list" hidden></ul>
     <div class="row"><a href="options.html" target="_blank">Settings</a></div>
   </main>
   <script type="module" src="popup.js"></script>
