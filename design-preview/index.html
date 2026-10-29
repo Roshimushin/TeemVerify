@@ -122,10 +122,11 @@
       { sentence: "Yeah the mayor loved calling the governor 'Robert J. SMITH'", items: [
         claim("d", "The mayor has publicly called the governor by his full name, \"Robert J. Smith\".", 1,
           "Video of three council meetings shows the mayor using the full name.",
-          [exhibit("https://example.org/northvale/council-video", "primary", "Council meeting recordings")]),
+          [exhibit("https://example.org/northvale/council-video", "primary", "Council meeting recordings")],
+          { quote: "calling the governor 'Robert J. SMITH'" }),
         claim("e", "The mayor stresses the governor's middle initial when saying his name.", 1,
-          "Meeting transcripts mark the emphasis each time."),
-        nonFact("opinion", "The mayor enjoys calling the governor by his full name.") ] },
+          "Meeting transcripts mark the emphasis each time.", [], { quote: "J. SMITH" }),
+        nonFact("opinion", "The mayor enjoys calling the governor by his full name.", { quote: "loved" }) ] },
     ].map((r, index) => ({ ...r, index, status: "remembered" }));
   </script>
   <script src="../extension/content/marks.js"></script>

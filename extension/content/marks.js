@@ -35,9 +35,19 @@
   const ACTORS = { model: "AI review", claude_code: "AI review (research queue)", becket: "Becket" };
   const CHECK_NOW_LABEL = "Check now (about 2¢)";
 
+  const HINTS = {
+    tier1: "Tier 1, click for sources",
+    tier2: "Tier 2, click for the evidence",
+    tier3: "Tier 3, click for details",
+    tier4: "Tier 4, click for sources",
+    unchecked: "Not checked yet, click to check",
+  };
+
   // Which highlight each category uses, and which show in the default view.
+  // HIGHLIGHTS is also the order of importance: refuted first, then verified.
   const DEFAULT_VIEW = new Set(["tier1", "tier4"]);
-  const HIGHLIGHTS = ["tier1", "tier2", "tier3", "tier4", "unchecked"];
+  const HIGHLIGHTS = ["tier4", "tier1", "tier2", "tier3", "unchecked"];
+  const FLASH_MS = 1400;
 
   // ---------- state ----------
 
@@ -45,8 +55,9 @@
     results: [],
     status: "idle",
     xray: false,
-    marks: [], // { range, category, result }
+    marks: [], // { range, category, result, item }
     chips: [], // { element, result, item }
+    ranges: new Map(), // item → the range of its words, for the flash when its card opens
     images: [], // { element, badge, results }
     darkAreas: [], // elements tagged .tv-on-dark
   };
@@ -130,7 +141,8 @@
     return { text, map };
   }
 
-  function findRange(index, sentence, used) {
+  // Where a sentence starts in the index, and its length there.
+  function findSentence(index, sentence, used) {
     const target = normalize(sentence);
     if (!target) return null;
     let at = index.text.indexOf(target);
@@ -138,8 +150,20 @@
     while (at !== -1 && used.has(at)) at = index.text.indexOf(target, at + 1);
     if (at === -1) return null;
     used.add(at);
+    return { at, length: target.length };
+  }
+
+  // Where a part's quoted words sit inside its sentence; null when they can't be found.
+  function findQuote(index, spot, quote) {
+    const target = normalize(quote).toLowerCase();
+    if (!target) return null;
+    const offset = index.text.slice(spot.at, spot.at + spot.length).toLowerCase().indexOf(target);
+    return offset === -1 ? null : { at: spot.at + offset, length: target.length };
+  }
+
+  function rangeAt(index, { at, length }) {
     const [startNode, startOffset] = index.map[at];
-    const [endNode, endOffset] = index.map[at + target.length - 1];
+    const [endNode, endOffset] = index.map[at + length - 1];
     const range = document.createRange();
     range.setStart(startNode, startOffset);
     range.setEnd(endNode, Math.min(endOffset + 1, endNode.data.length));
@@ -148,26 +172,30 @@
 
   // ---------- what a result looks like on the page ----------
 
-  // A sentence's mark follows its most important claim: refuted first, then verified.
-  function categoryOf(result) {
-    const claims = result.items.filter((i) => i.kind === "claim");
-    const tiers = claims.map((i) => i.tier);
-    if (tiers.includes(4)) return "tier4";
-    if (tiers.includes(1)) return "tier1";
-    if (tiers.includes(2)) return "tier2";
-    if (tiers.includes(3)) return "tier3";
-    if (claims.length) return "unchecked";
-    return null;
+  function categoryOfItem(item) {
+    return item.tier ? `tier${item.tier}` : "unchecked";
   }
 
-  function nonFactKinds(result) {
-    return [...new Set(result.items.map((i) => i.kind).filter((k) => NON_FACTS[k]))];
+  // The most important claim among items: refuted first, then verified.
+  function leadClaim(items) {
+    const claims = items.filter((i) => i.kind === "claim");
+    const rank = (i) => HIGHLIGHTS.indexOf(categoryOfItem(i));
+    return claims.sort((a, b) => rank(a) - rank(b))[0] ?? null;
+  }
+
+  function categoryOf(result) {
+    const lead = leadClaim(result.items);
+    return lead && categoryOfItem(lead);
   }
 
   // ---------- drawing ----------
 
   function clear() {
-    for (const name of HIGHLIGHTS) CSS.highlights.delete(`tv-${name}`);
+    for (const name of HIGHLIGHTS) {
+      CSS.highlights.delete(`tv-${name}`);
+      CSS.highlights.delete(`tv-hover-${name}`);
+    }
+    CSS.highlights.delete("tv-flash");
     for (const chip of state.chips) chip.element.remove();
     for (const image of state.images) image.badge.remove();
     for (const element of state.darkAreas) element.classList.remove("tv-on-dark");
@@ -175,6 +203,9 @@
     state.marks = [];
     state.chips = [];
     state.images = [];
+    state.ranges = new Map();
+    hovered = null;
+    hint.hidden = true;
   }
 
   function render() {
@@ -184,33 +215,49 @@
     const byImage = new Map();
     const placed = [];
 
-    // Find every sentence first: inserting chips changes the page's text nodes, which
-    // would leave the index pointing at the wrong places.
+    // Find every sentence and part first: inserting chips changes the page's text nodes,
+    // which would leave the index pointing at the wrong places.
     for (const result of state.results) {
       if (result.image) {
         if (!byImage.has(result.image)) byImage.set(result.image, []);
         byImage.get(result.image).push(result);
         continue;
       }
-      const category = categoryOf(result);
-      const kinds = nonFactKinds(result);
-      if (!category && !kinds.length) continue;
-      const range = findRange(index, result.sentence, used);
-      if (!range) continue;
-      if (category) state.marks.push({ range, category, result });
-      if (kinds.length) placed.push({ range, kinds, result });
+      const items = result.items.filter((i) => i.kind !== "not_a_claim");
+      if (!items.length) continue;
+      const spot = findSentence(index, result.sentence, used);
+      if (!spot) continue;
+      const sentenceRange = rangeAt(index, spot);
+
+      // Each claim is underlined on just its own words. Claims without words of their own
+      // (labelled before parts had quotes) share one mark across the sentence, styled by
+      // the most important of them.
+      const shared = [];
+      for (const item of items) {
+        const words = item.quote && findQuote(index, spot, item.quote);
+        const range = words ? rangeAt(index, words) : sentenceRange;
+        state.ranges.set(item, range);
+        if (item.kind !== "claim") continue;
+        if (words) state.marks.push({ range, category: categoryOfItem(item), result, item });
+        else shared.push(item);
+      }
+      const lead = leadClaim(shared);
+      if (lead) state.marks.push({ range: sentenceRange, category: categoryOfItem(lead), result, item: lead });
+
+      const nonFacts = items.filter((i) => NON_FACTS[i.kind]);
+      if (nonFacts.length) placed.push({ range: sentenceRange, nonFacts, result });
     }
 
-    // Chips go at the end of the sentence, one per kind of non-fact. Ranges are live,
-    // so the marks found above stay correct as chips are inserted.
-    for (const { range, kinds, result } of placed) {
+    // Chips go at the end of the sentence, one per non-fact part, in sentence order.
+    // Ranges are live, so the marks found above stay correct as chips are inserted.
+    for (const { range, nonFacts, result } of placed) {
       const end = range.cloneRange();
       end.collapse(false);
-      for (const kind of kinds.reverse()) {
-        const chip = el("span", "tv-chip", NON_FACTS[kind].name);
+      for (const item of [...nonFacts].reverse()) {
+        const chip = el("span", "tv-chip", NON_FACTS[item.kind].name);
         chip.dataset.tvChip = "true";
+        chip.title = item.text;
         end.insertNode(chip);
-        const item = result.items.find((i) => i.kind === kind);
         state.chips.push({ element: chip, result, item });
       }
     }
@@ -303,6 +350,7 @@
   addEventListener("scroll", () => {
     // The card would drift away from its sentence, so scrolling the page closes it.
     closeCard();
+    setHovered(null);
     requestAnimationFrame(positionBadges);
   }, { passive: true, capture: true });
   addEventListener("resize", () => requestAnimationFrame(positionBadges));
@@ -397,9 +445,9 @@
   }
 
   // Shows every labelled item of the given sentence results, so a sentence reads the same
-  // whichever of its marks or chips was tapped. `anchor` is a DOMRect; `focusKind` puts the
-  // tapped kind first (e.g. "opinion" when its chip was tapped).
-  function openCard(results, anchor, quoteLabel, focusKind) {
+  // whichever of its marks or chips was tapped. `anchor` is a DOMRect; `focusItem` (the
+  // tapped part) goes first, and its words light up briefly in the page.
+  function openCard(results, anchor, quoteLabel, focusItem) {
     closeCard();
     card = el("div", "tv-card");
     card.setAttribute("role", "dialog");
@@ -415,7 +463,7 @@
     for (const result of results) {
       const items = result.items
         .filter((i) => i.kind !== "not_a_claim")
-        .sort((a, b) => (b.kind === focusKind) - (a.kind === focusKind));
+        .sort((a, b) => (b === focusItem) - (a === focusItem));
       if (!items.length) continue;
       if (quoteLabel || items.length > 1) card.append(el("p", "tv-quote", result.sentence));
       if (items.length > 1) {
@@ -426,6 +474,17 @@
 
     layer.append(card);
     placeCard(anchor);
+    if (focusItem) flash(focusItem);
+  }
+
+  let flashTimer = 0;
+
+  function flash(item) {
+    const range = state.ranges.get(item);
+    if (!range) return;
+    CSS.highlights.set("tv-flash", new Highlight(range));
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => CSS.highlights.delete("tv-flash"), FLASH_MS);
   }
 
   function placeCard(anchor) {
@@ -583,10 +642,12 @@
     return range && { node: range.startContainer, offset: range.startOffset };
   }
 
+  // The mark under the pointer. Where parts overlap, the one with the fewest words wins,
+  // since it's the most specific.
   function markAt(x, y) {
     const caret = caretAt(x, y);
     if (!caret) return null;
-    return state.marks.find((m) => {
+    const hits = state.marks.filter((m) => {
       if (!state.xray && !DEFAULT_VIEW.has(m.category)) return false;
       try {
         if (!m.range.isPointInRange(caret.node, caret.offset)) return false;
@@ -596,7 +657,9 @@
       } catch {
         return false;
       }
-    }) ?? null;
+    });
+    const size = (m) => m.range.toString().length;
+    return hits.sort((a, b) => size(a) - size(b))[0] ?? null;
   }
 
   document.addEventListener("click", (event) => {
@@ -606,7 +669,7 @@
       event.preventDefault();
       event.stopPropagation();
       const found = state.chips.find((c) => c.element === chip);
-      if (found) openCard([found.result], chip.getBoundingClientRect(), undefined, found.item.kind);
+      if (found) openCard([found.result], chip.getBoundingClientRect(), undefined, found.item);
       return;
     }
     // Links keep working: marks inside a link open only with Alt held.
@@ -621,8 +684,36 @@
     }
     event.preventDefault();
     event.stopPropagation();
-    openCard([mark.result], mark.range.getBoundingClientRect());
+    setHovered(null);
+    openCard([mark.result], mark.range.getBoundingClientRect(), undefined, mark.item);
   }, true);
+
+  // ---------- hovering marks (desktop) ----------
+
+  // The hovered mark thickens and a short hint follows the pointer.
+  const hint = el("div", "tv-hint");
+  hint.hidden = true;
+  layer.append(hint);
+  let hovered = null;
+
+  function setHovered(mark, x, y) {
+    if (mark !== hovered) {
+      if (hovered) CSS.highlights.delete(`tv-hover-${hovered.category}`);
+      if (mark) {
+        const highlight = new Highlight(mark.range);
+        highlight.priority = 1;
+        CSS.highlights.set(`tv-hover-${mark.category}`, highlight);
+        hint.textContent = HINTS[mark.category];
+      }
+      hovered = mark;
+      hint.hidden = !mark;
+      document.documentElement.classList.toggle("tv-pointer", Boolean(mark));
+    }
+    if (mark) {
+      hint.style.left = `${Math.min(x + 12, innerWidth - hint.offsetWidth - 8)}px`;
+      hint.style.top = `${y + 18}px`;
+    }
+  }
 
   let pendingMove = false;
   document.addEventListener("mousemove", (event) => {
@@ -630,7 +721,7 @@
     pendingMove = true;
     requestAnimationFrame(() => {
       pendingMove = false;
-      document.documentElement.classList.toggle("tv-pointer", Boolean(markAt(event.clientX, event.clientY)));
+      setHovered(card ? null : markAt(event.clientX, event.clientY), event.clientX, event.clientY);
     });
   }, { passive: true });
 

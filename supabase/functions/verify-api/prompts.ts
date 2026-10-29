@@ -10,7 +10,9 @@ Split each sentence into atomic claims (one checkable statement each). Classify 
 - "forecast": a prediction of a specific checkable future outcome. Give a resolve_by date if one can be inferred.
 - "not_a_claim": questions without an embedded accusation, greetings, credits, jokes, instructions, fragments.
 Values, opinions and forecasts are never tiered. If a value or opinion rests on a factual claim, extract that claim separately ("I don't believe X happened" = an ungraded belief + the graded claim "X happened"). Hyperbole and charged words don't make a sentence an opinion if a checkable claim sits underneath: extract the claim.
-Reword each item in its most precise neutral form: name the actor when known, keep the accurate term even when ugly, strip hyperbole and insults.`;
+Reword each item in its most precise neutral form: name the actor when known, keep the accurate term even when ugly, strip hyperbole and insults.
+
+For every item also give "quote": the words in the original sentence that this item comes from, copied exactly (same spelling, capitals and punctuation), as one continuous stretch. Keep it as short as possible while still covering what the item states: for a claim, the words that make the claim; for an opinion or value, the judging words (e.g. "loved", "too little"). Use the whole sentence only when the item really spans all of it. Example: "Yeah the mayor loved calling the governor 'Robert J. SMITH'" -> claim "The mayor has publicly called the governor Robert J. Smith" quote "calling the governor 'Robert J. SMITH'"; opinion "The mayor enjoys it" quote "loved".`;
 
 export const TRIAGE_SYSTEM = `You sort sentences from a web page for Verify, a fact-labelling browser extension. Don't research anything; only classify. Same standard for every side, party and person.
 
@@ -79,8 +81,9 @@ const ITEM = {
     as_of: { type: ["string", "null"], description: "YYYY-MM-DD for time-bound facts" },
     resolve_by: { type: ["string", "null"], description: "YYYY-MM-DD for forecasts" },
     exhibits: { type: "array", items: EXHIBIT },
+    quote: { type: "string", description: "Exact continuous words from the sentence this item comes from" },
   },
-  required: ["kind", "text", "tier", "reason", "scope", "as_of", "resolve_by", "exhibits"],
+  required: ["kind", "text", "quote", "tier", "reason", "scope", "as_of", "resolve_by", "exhibits"],
   additionalProperties: false,
 };
 
@@ -137,8 +140,9 @@ export const TRIAGE_SCHEMA = {
                 kind: { type: "string", enum: ["claim", "value", "opinion", "forecast", "not_a_claim"] },
                 text: { type: "string" },
                 resolve_by: { type: ["string", "null"] },
+                quote: { type: "string", description: "Exact continuous words from the sentence this item comes from" },
               },
-              required: ["kind", "text", "resolve_by"],
+              required: ["kind", "text", "quote", "resolve_by"],
               additionalProperties: false,
             },
           },

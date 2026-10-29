@@ -14,3 +14,7 @@ Every check and every piece of reviewer feedback is saved to a block store (Supa
 ## Layout
 
 - `supabase/`: database scripts for the block store.
+
+## License
+
+GNU Affero General Public License v3.0 (AGPL-3.0), see `LICENSE`. Anyone who shares a modified version, including running it as a hosted service, must publish their changes, so every fork shows how it grades claims.

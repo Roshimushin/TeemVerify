@@ -24,6 +24,8 @@
   --tv-tier4-bg: rgba(229, 57, 53, 0.2);
   /* Not checked yet: a claim waiting in the research queue (X-ray only). */
   --tv-unchecked: #b8bcc4;
+  /* The tapped part's words light up briefly when its card opens. */
+  --tv-flash-bg: rgba(255, 213, 79, 0.5);
 
   /* Chips for non-facts (X-ray only). */
   --tv-chip-bg: #eef0f4;
@@ -50,6 +52,7 @@
   --tv-tier4: #ff6b66;
   --tv-tier4-bg: rgba(255, 92, 87, 0.28);
   --tv-unchecked: #7d838d;
+  --tv-flash-bg: rgba(255, 213, 79, 0.32);
   --tv-chip-bg: #2a2e36;
   --tv-chip-text: #d6dae1;
   --tv-chip-border: #464c57;
@@ -102,6 +105,45 @@
   text-decoration-style: dashed;
   text-decoration-color: var(--tv-unchecked);
   text-decoration-thickness: 1px;
+}
+
+/* Desktop hover: the mark under the pointer thickens (one rule per mark style). */
+::highlight(tv-hover-tier1) {
+  text-decoration-line: underline;
+  text-decoration-color: var(--tv-tier1-line);
+  text-decoration-thickness: 4px;
+}
+
+::highlight(tv-hover-tier4) {
+  background-color: var(--tv-tier4-bg);
+  text-decoration-line: underline;
+  text-decoration-color: var(--tv-tier4);
+  text-decoration-thickness: 4px;
+}
+
+::highlight(tv-hover-tier2) {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--tv-tier2);
+  text-decoration-thickness: 3px;
+}
+
+::highlight(tv-hover-tier3) {
+  color: var(--tv-tier3);
+  text-decoration-line: underline;
+  text-decoration-color: var(--tv-tier3);
+  text-decoration-thickness: 3px;
+}
+
+::highlight(tv-hover-unchecked) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-color: var(--tv-unchecked);
+  text-decoration-thickness: 3px;
+}
+
+::highlight(tv-flash) {
+  background-color: var(--tv-flash-bg);
 }
 
 /* Marks can't show a pointer themselves, so the page gets one while hovering a mark. */
@@ -452,4 +494,19 @@ html.tv-xray .tv-chip {
   color: var(--tv-tier1) !important;
   font-size: 13px;
   cursor: pointer;
+}
+
+/* ---------- Hover hint (desktop) ---------- */
+
+.tv-hint {
+  position: fixed;
+  z-index: 2147483647;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--tv-text);
+  color: var(--tv-surface);
+  font: 500 12px/1.3 var(--tv-font);
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--tv-shadow);
 }

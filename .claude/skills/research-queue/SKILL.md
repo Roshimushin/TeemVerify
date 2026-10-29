@@ -19,6 +19,8 @@ spend Anthropic API money. Never call the `check` action from here; that one cos
 3. For each queued sentence, research it with WebSearch and WebFetch, then grade it by the rules:
    split into atomic items, classify each, tier claims, reword precisely, cite up to 3 exhibits
    you actually opened. Encyclopedias are never exhibits: follow them to primary sources.
+   Give every item a `quote`: the exact words of the sentence it comes from (see the quote
+   rule in `prompts.ts`), so the page underlines only those words.
    Claims you can't settle are Tier 3, with a reason that says what was and wasn't found.
    If a sentence can't be researched at all (e.g. it needs context the sentence lacks), you may
    still grade it Tier 3 with "No evidence presented" and say what's missing.

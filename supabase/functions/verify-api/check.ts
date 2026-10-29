@@ -54,6 +54,8 @@ export type Item = {
   as_of: string | null;
   resolve_by: string | null;
   exhibits: { url: string; location: string; source_type: string }[];
+  // The exact words of the sentence this item comes from, so the page can mark just those.
+  quote?: string | null;
   block_id?: string;
 };
 
@@ -334,9 +336,15 @@ async function triage(supabase: SupabaseClient, sentences: string[]): Promise<Ma
     messages: [{ role: "user", content: `Today is ${today()}.\n\nSentences:\n${numbered(sentences)}` }],
     output_config: { effort: "low", format: { type: "json_schema", schema: TRIAGE_SCHEMA } },
   });
-  return new Map(out.results.map((r: { index: number; items: { kind: Kind; text: string; resolve_by: string | null }[] }) => [
+  type Sorted = { kind: Kind; text: string; quote: string; resolve_by: string | null };
+  return new Map(out.results.map((r: { index: number; items: Sorted[] }) => [
     r.index,
-    r.items.map((i) => i.kind === "claim" ? { ...nonFactItem("claim", i.text, null), reason: "Waiting for research." } : nonFactItem(i.kind, i.text, i.resolve_by)),
+    r.items.map((i) => ({
+      ...(i.kind === "claim"
+        ? { ...nonFactItem("claim", i.text, null), reason: "Waiting for research." }
+        : nonFactItem(i.kind, i.text, i.resolve_by)),
+      quote: fitQuote(sentences[r.index] ?? "", i.quote),
+    })),
   ]));
 }
 
@@ -469,7 +477,8 @@ async function saveResearched(
   actor: "model" | "claude_code",
 ): Promise<Item[]> {
   const saved: Item[] = [];
-  for (const item of items) {
+  for (const given of items) {
+    const item = { ...given, quote: fitQuote(sentence, given.quote) };
     if (item.kind === "not_a_claim") {
       saved.push(item);
       continue;
@@ -521,6 +530,15 @@ function validate(sentences: string[], max: number, cap: number) {
   if (!Array.isArray(sentences) || sentences.length === 0) throw new Error("needs sentences");
   if (sentences.length > max) throw new Error(`takes at most ${max} sentences at a time`);
   if (!(Number(cap) >= 0)) throw new Error("needs daily_cap_usd");
+}
+
+// Keeps a part's quoted words only if they really appear in the sentence (ignoring case,
+// spacing and curly quotes), so the page never marks words that aren't there.
+function fitQuote(sentence: string, quote: string | null | undefined): string | null {
+  if (!quote) return null;
+  const plain = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim().toLowerCase();
+  const words = plain(quote);
+  return words && plain(sentence).includes(words) ? quote.trim() : null;
 }
 
 function today() {
