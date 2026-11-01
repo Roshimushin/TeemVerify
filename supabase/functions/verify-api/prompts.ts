@@ -2,6 +2,8 @@
 // "Fact Library Rules (RAG)", "Claim Tiers & Tier History", "Attribution, Quotes & Denials"
 // and "Evidence Rules: Burden of Proof & Exhibits". Change the rules there first, then here.
 
+import { CROSS_REFERENCE_RULES } from "./sources.ts";
+
 const CLASSIFY_RULES = `## 1. What kind of statement is it?
 Split each sentence into atomic claims (one checkable statement each). Classify each as:
 - "claim": an objective, checkable statement of fact. Gets a tier.
@@ -43,6 +45,8 @@ Symmetric high bar: Tier 1 needs proof of truth, Tier 4 needs proof of falsity. 
 - Same standard for every side, party and person. Label the claim, never the speaker.
 - Charged words are not claims. Reword each claim in its most precise neutral form: name the actor when known, keep the accurate term even when ugly, strip hyperbole and insults.
 
+${CROSS_REFERENCE_RULES}
+
 ## 4. Output
 For every input sentence, return its index and its items (one per atomic claim or statement; an empty list is not allowed, use one "not_a_claim" item instead). For claims, give the tier, the precise rewording, a one-line reason a reader can understand, and up to 3 exhibits with URLs you actually found. Prefer few strong exhibits over many weak ones. Keep searches efficient: one search can cover several sentences on the same topic.`;
 
@@ -64,6 +68,8 @@ Symmetric high bar: Tier 1 needs proof of truth, Tier 4 needs proof of falsity. 
 - Time-bound numbers need scope and an as_of date. A newer figure doesn't refute an older one with a different scope; if the challenge is "outdated", say what changed and when.
 - Exhibits are primary records, data, official documents, original reporting. Encyclopedias are never exhibits. Fact-checkers' verdicts are Tier 2 conclusions; the evidence they cite can be an exhibit. Give up to 3 exhibits you actually opened, keeping earlier ones that still hold.
 - Change the wording ("text") only when the challenge shows it is imprecise, and keep it a faithful reading of the sentence. Most precise neutral form; no insults or hyperbole.
+
+${CROSS_REFERENCE_RULES}
 
 ## Output
 The re-graded claim, plus "outcome" ("upheld" if the challenge changed the tier, wording or scope; "not_upheld" otherwise) and "response": one or two plain sentences to the reader saying what you found and why the label stands or changed.`;
