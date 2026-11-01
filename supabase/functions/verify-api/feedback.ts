@@ -43,8 +43,14 @@ export async function challengeBlock(
   if (!(Number(daily_cap_usd) >= 0)) throw new Error("needs daily_cap_usd");
 
   const block = await loadBlock(supabase, block_id);
+  const exhibits = await exhibitsFor(supabase, block_id);
+  // A copy of the claim before the re-check, so nothing it replaces is lost.
+  const previous = {
+    text: block.claim_text, tier: block.tier, status: block.status, reason: block.reason,
+    scope: block.scope, as_of: block.as_of, exhibits,
+  };
   const { data: challenge, error } = await supabase.from("challenges")
-    .insert({ block_id, reason_type, note, link, old_tier: block.tier })
+    .insert({ block_id, reason_type, note, link, old_tier: block.tier, previous })
     .select("id").single();
   if (error) throw error;
 
@@ -54,7 +60,6 @@ export async function challengeBlock(
   }
 
   try {
-    const exhibits = await exhibitsFor(supabase, block_id);
     const { data: sighting } = await supabase.from("sightings")
       .select("quoted_text").eq("block_id", block_id).order("seen_at", { ascending: false }).limit(1).maybeSingle();
     const tools: unknown[] = [{ type: "web_search_20250305", name: "web_search", max_uses: MAX_RECHECK_SEARCHES }];
@@ -197,7 +202,8 @@ async function logWording(supabase: SupabaseClient, blockId: string, oldText: st
 }
 
 // Links the re-check's exhibits to the block, reusing stored ones by address. Exhibits it
-// dropped are unlinked but kept in the exhibits table. Returns the challenge link's exhibit id.
+// dropped are unlinked but kept in the exhibits table (and in the challenge's copy of the
+// claim before the re-check). Returns the challenge link's exhibit id.
 async function replaceExhibits(
   supabase: SupabaseClient,
   blockId: string,

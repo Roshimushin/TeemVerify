@@ -91,6 +91,7 @@ const EXPORT_TABLES = [
   "sentence_memory",
   "claim_queue",
   "image_memory",
+  "wording_history",
 ];
 const PAGE_SIZE = 1000;
 
