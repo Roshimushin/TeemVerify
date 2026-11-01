@@ -68,3 +68,16 @@ linked.
 
 Add or remove an outlet only by the criteria above, and note the date and reason in the change.
 A criterion itself can change, but the new one must apply to every outlet the same way.
+
+## Seed import
+
+Fact-checks are collected into the library only where the outlet's terms allow it. Each one is
+stored as a Tier 2 draft with the fact-check as its exhibit, then queued for research to the
+primary record. Research pulls evenly across outlets: the queue alternates between them, newest
+first, however many each one published.
+
+| Route | Status (2026-11-01) |
+| --- | --- |
+| [Data Commons fact-check feed](https://datacommons.org/factcheck/download) | Imported: 635 English fact-checks since 2025 by admitted outlets (PolitiFact 251, FactCheck.org 187, Deutsche Welle 180, The Journal 9, The Washington Post 6, The Dispatch 2). Licensed CC BY 4.0; attribution: Data Commons, and each fact-check's outlet, linked on every claim. |
+| Google Fact Check Tools API | Used live during research only. Google's API terms (section 5e) forbid storing its results as a database, so nothing from it is saved except links Claude opens and cites. |
+| Outlets' own pages | Only with each outlet's permission. FactCheck.org allows free reuse with credit and a link (and is already in the feed). Full Fact allows reuse under its own API licence. Snopes blocks Anthropic's crawlers in robots.txt, so it isn't collected. PolitiFact, AP, Reuters and Lead Stories: terms not yet confirmed. |

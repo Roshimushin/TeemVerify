@@ -9,6 +9,7 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { ask, compare, enqueue, exhibitsFor, hash, type Item, remember, spentToday, today } from "./check.ts";
+import { factCheckLeads } from "./factcheck.ts";
 import { RECHECK_SCHEMA, RECHECK_SYSTEM } from "./prompts.ts";
 
 type Embed = (text: string) => Promise<string>;
@@ -62,8 +63,9 @@ export async function challengeBlock(
   try {
     const { data: sighting } = await supabase.from("sightings")
       .select("quoted_text").eq("block_id", block_id).order("seen_at", { ascending: false }).limit(1).maybeSingle();
+    const leads = await factCheckLeads([block.claim_text]);
     const tools: unknown[] = [{ type: "web_search_20250305", name: "web_search", max_uses: MAX_RECHECK_SEARCHES }];
-    if (link) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: MAX_RECHECK_FETCHES });
+    if (link || leads) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: MAX_RECHECK_FETCHES });
 
     const out = await ask(supabase, "recheck", {
       system: RECHECK_SYSTEM,
@@ -77,7 +79,7 @@ export async function challengeBlock(
           },
           seen_in_sentence: sighting?.quoted_text ?? null,
           challenge: { reason_type, note: note ?? null, link: link ?? null },
-        }, null, 2),
+        }, null, 2) + leads,
       }],
       // deno-lint-ignore no-explicit-any
       tools: tools as any,
@@ -121,6 +123,43 @@ export async function challengeBlock(
     await supabase.from("challenges").update({ resolution: `Re-check failed: ${message}` }).eq("id", challenge.id);
     throw err;
   }
+}
+
+// ---------- research on a stored claim ----------
+
+// Research by Claude Code on a claim already in the library (a fact-checker seed) revises that
+// block rather than adding a second copy. Tier and wording changes are logged; exhibits it
+// drops are unlinked but kept. A claim Becket reviewed is never overwritten: challenge it instead.
+export async function reviseBlock(
+  supabase: SupabaseClient,
+  embed: Embed,
+  blockId: string,
+  item: Item,
+  actor: string,
+): Promise<Item> {
+  const block = await loadBlock(supabase, blockId);
+  if (block.status === "reviewed") throw new Error("This claim was reviewed by Becket; challenge it instead.");
+  const tier = item.tier && item.tier >= 1 && item.tier <= 4 ? item.tier : 3;
+  const text = item.text.trim();
+  const update: Record<string, unknown> = {
+    tier, reason: item.reason, scope: item.scope, as_of: item.as_of, status: "ai_draft",
+  };
+  if (text !== block.claim_text) {
+    update.claim_text = text;
+    update.embedding = await embed(text);
+    await logWording(supabase, blockId, block.claim_text, text, actor, "Researched");
+  }
+  const { error } = await supabase.from("blocks").update(update).eq("id", blockId);
+  if (error) throw error;
+  if (tier !== block.tier) await logTier(supabase, blockId, block.tier, tier, item.reason, actor);
+  await replaceExhibits(supabase, blockId, item.exhibits ?? []);
+
+  const patch = {
+    text, tier, reason: item.reason, scope: item.scope, as_of: item.as_of,
+    exhibits: await exhibitsFor(supabase, blockId),
+  };
+  await patchMemory(supabase, blockId, patch);
+  return { ...item, ...patch, block_id: blockId };
 }
 
 // ---------- reword ----------

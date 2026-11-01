@@ -29,8 +29,49 @@ Admitted outlets (as of ${ADMITTED_AS_OF}, chosen by written criteria, not by le
 - Fact-checkers (verified IFCN signatories): ${FACT_CHECKERS.join(", ")}, and any other verified IFCN signatory.
 - Original reporting (published standards and corrections): ${ORIGINAL_REPORTING.join(", ")}.
 For each claim:
-1. Your first search for every claim is the cross-reference search: the claim's key words plus "fact check". Look in the results for admitted fact-checkers and admitted news organizations. When several fact-checkers covered it, read more than one; don't favor any outlet. If none covered it, say so in the reason ("No admitted fact-checks found").
+1. Your first search for every claim is the cross-reference search: the claim's key words plus "fact check". Look in the results for admitted fact-checkers and admitted news organizations. When several fact-checkers covered it, read more than one; don't favor any outlet. If none covered it, say so in the reason ("No admitted fact-checks found"). When the request lists fact-check leads from Google Fact Check Tools, open the ones about the same claim first, and treat them like search results.
 2. Follow what they cite to the primary record (documents, data, official statements, recordings) and grade from that. A fact-checker's verdict is a Tier 2 conclusion: list the primary records as exhibits, and the fact-check itself (source_type "fact_checker") only when its evidence can't be reached.
 3. If admitted outlets disagree with each other or with the primary record, say so in the reason and grade from the primary evidence.
 4. Other outlets can be used too; admitted ones are simply where to look first. Primary records count wherever they're published. Never cite a trivia, listicle or content-farm site as an exhibit: find who it got the fact from.
 5. Use source_type "fact_checker" only for the admitted fact-checkers above. A site that calls itself a fact-checker but isn't admitted is "secondary" at most, and needs a primary source behind it.`;
+
+// Admitted fact-checkers by web address, for spotting their fact-checks in search results.
+// scripts/seed_datacommons.py keeps a copy: change both together.
+export const FACT_CHECK_SITES: Record<string, string> = {
+  "apnews.com": "AP Fact Check",
+  "reuters.com": "Reuters Fact Check",
+  "factcheck.afp.com": "AFP Fact Check",
+  "politifact.com": "PolitiFact",
+  "factcheck.org": "FactCheck.org",
+  "snopes.com": "Snopes",
+  "leadstories.com": "Lead Stories",
+  "washingtonpost.com": "The Washington Post Fact Checker",
+  "thedispatch.com": "The Dispatch Fact Check",
+  "poynter.org": "MediaWise",
+  "wisconsinwatch.org": "Wisconsin Watch",
+  "fullfact.org": "Full Fact",
+  "factcheckni.org": "FactCheckNI",
+  "pamediagroup.com": "PA Media",
+  "aap.com.au": "AAP FactCheck",
+  "thecanadianpress.com": "The Canadian Press",
+  "thejournal.ie": "The Journal FactCheck",
+  "dw.com": "Deutsche Welle",
+  "africacheck.org": "Africa Check",
+  "rappler.com": "Rappler",
+  "univision.com": "El Detector (Univision)",
+  "telemundo.com": "T Verifica (Telemundo)",
+  "factchequeado.com": "Factchequeado",
+};
+
+export function admittedFactChecker(url: string): string | null {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+  for (const [site, name] of Object.entries(FACT_CHECK_SITES)) {
+    if (host === site || host.endsWith(`.${site}`)) return name;
+  }
+  return null;
+}

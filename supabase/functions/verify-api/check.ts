@@ -24,6 +24,8 @@ import {
   TRIAGE_SCHEMA,
   TRIAGE_SYSTEM,
 } from "./prompts.ts";
+import { factCheckLeads } from "./factcheck.ts";
+import { reviseBlock } from "./feedback.ts";
 
 // Claude Haiku 5.5 does every paid step (Becket's choice, Oct 28, 2026).
 const MODEL = "claude-haiku-5-5";
@@ -39,6 +41,8 @@ const NON_FACT_MATCH_THRESHOLD = 0.95;
 const MAX_LOOKUP_SENTENCES = 8;
 const MAX_CHECK_SENTENCES = 6;
 const MAX_SEARCHES_PER_CHECK = 6;
+// Opening fact-checks found in Google Fact Check Tools costs tokens only (no per-use fee).
+const MAX_FETCHES_PER_CHECK = 3;
 
 const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
 
@@ -202,11 +206,16 @@ export async function checkSentences(
 export async function queueNext(supabase: SupabaseClient, { limit = 10 }: { limit?: number }) {
   const { data, error } = await supabase
     .from("claim_queue")
-    .select("id, sentence_text, page_url, seen_count, queued_at, picked_at")
+    .select(
+      "id, sentence_text, page_url, seen_count, queued_at, picked_at, stream, " +
+        "seed: seed_reviews(outlet, review_url, review_date, rating, rating_explanation, claimant, claim_date, appearance_url, block_id)",
+    )
     .eq("status", "queued")
-    // Becket's picks first, in the order picked; then the most-seen claims.
+    // Becket's picks first, in the order picked; then the most-seen claims; then fact-checker
+    // seeds, which are interleaved across outlets by priority.
     .order("picked_at", { ascending: true, nullsFirst: false })
     .order("seen_count", { ascending: false })
+    .order("priority", { ascending: false })
     .order("queued_at", { ascending: true })
     .limit(Math.min(Number(limit) || 10, 50));
   if (error) throw error;
@@ -379,10 +388,14 @@ export async function compare(supabase: SupabaseClient, pairs: [string, string][
 }
 
 async function research(supabase: SupabaseClient, url: string, sentences: string[]): Promise<Map<number, Item[]>> {
+  const leads = await factCheckLeads(sentences);
+  const tools: unknown[] = [{ type: "web_search_20250305", name: "web_search", max_uses: MAX_SEARCHES_PER_CHECK }];
+  if (leads) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: MAX_FETCHES_PER_CHECK });
   const out = await ask(supabase, "check", {
     system: CHECK_SYSTEM,
-    messages: [{ role: "user", content: `Today is ${today()}. Page: ${url}\n\nSentences:\n${numbered(sentences)}` }],
-    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: MAX_SEARCHES_PER_CHECK }],
+    messages: [{ role: "user", content: `Today is ${today()}. Page: ${url}\n\nSentences:\n${numbered(sentences)}${leads}` }],
+    // deno-lint-ignore no-explicit-any
+    tools: tools as any,
     output_config: { effort: "medium", format: { type: "json_schema", schema: CHECK_SCHEMA } },
   });
   return new Map(out.results.map((r: { index: number; items: Item[] }) => [r.index, r.items]));
@@ -505,6 +518,11 @@ async function saveResearched(
     if (item.kind !== "claim") {
       await saveNonFact(supabase, embed, url, item);
       saved.push(item);
+      continue;
+    }
+    // Claude Code researching a stored claim (a fact-checker seed) updates that block in place.
+    if (actor === "claude_code" && item.block_id) {
+      saved.push(await reviseBlock(supabase, embed, item.block_id, item, actor));
       continue;
     }
 

@@ -4,7 +4,7 @@
 //
 // Actions (POST JSON with an "action" field):
 //   match          { text, threshold?, count? } -> blocks whose meaning is close to text
-//   embed_missing  {}                           -> fills in embeddings for blocks that lack one
+//   embed_missing  { limit? }                   -> fills in embeddings for blocks that lack one
 //   export         {}                           -> every row of every block store table, as JSON
 //   lookup         { url, sentences, daily_cap_usd } -> cheap labelling of up to 20 sentences;
 //                                                     claims go to the research queue (see check.ts)
@@ -61,12 +61,13 @@ async function match(text: string, threshold = 0.85, count = 5) {
   return { matches: data };
 }
 
-async function embedMissing() {
+// A few at a time: embedding is processor-heavy, and the free tier stops long requests.
+async function embedMissing(limit = 8) {
   const { data: blocks, error } = await supabase
     .from("blocks")
     .select("id, claim_text")
     .is("embedding", null)
-    .limit(100);
+    .limit(Math.min(Number(limit) || 8, 100));
   if (error) throw error;
 
   for (const block of blocks) {
@@ -76,7 +77,8 @@ async function embedMissing() {
       .eq("id", block.id);
     if (updateError) throw updateError;
   }
-  return { embedded: blocks.length };
+  const { count } = await supabase.from("blocks").select("id", { count: "exact", head: true }).is("embedding", null);
+  return { embedded: blocks.length, remaining: count ?? 0 };
 }
 
 const EXPORT_TABLES = [
@@ -92,6 +94,7 @@ const EXPORT_TABLES = [
   "claim_queue",
   "image_memory",
   "wording_history",
+  "seed_reviews",
 ];
 const PAGE_SIZE = 1000;
 
@@ -131,7 +134,7 @@ Deno.serve(async (req) => {
         }
         return reply(await match(body.text, body.threshold, body.count));
       case "embed_missing":
-        return reply(await embedMissing());
+        return reply(await embedMissing(body.limit));
       case "export":
         return reply(await exportAll());
       case "lookup":
