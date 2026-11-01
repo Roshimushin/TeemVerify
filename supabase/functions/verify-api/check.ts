@@ -510,7 +510,7 @@ async function saveResearched(
 ): Promise<Item[]> {
   const saved: Item[] = [];
   for (const given of items) {
-    const item = { ...given, quote: fitQuote(sentence, given.quote) };
+    const item = { ...given, quote: fitQuote(sentence, given.quote), exhibits: noEncyclopedias(given.exhibits) };
     if (item.kind === "not_a_claim") {
       saved.push(item);
       continue;
@@ -538,7 +538,7 @@ async function saveResearched(
     }).select("id").single();
     if (error) throw error;
 
-    for (const exhibit of item.exhibits ?? []) {
+    for (const exhibit of item.exhibits) {
       const { data: savedExhibit, error: exhibitError } = await supabase.from("exhibits").insert({
         source_url: exhibit.url,
         location: exhibit.location,
@@ -587,4 +587,20 @@ export async function hash(sentence: string) {
   const normalized = sentence.toLowerCase().replace(/\s+/g, " ").trim();
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Encyclopedias are never exhibits (Fact Library Rules): dropped here even if Claude lists one,
+// so the rule doesn't depend on the prompt alone.
+const ENCYCLOPEDIAS = ["wikipedia.org", "britannica.com", "encyclopedia.com", "wikiwand.com", "fandom.com"];
+
+export function noEncyclopedias<T extends { url: string; source_type?: string }>(exhibits: T[] | null | undefined): T[] {
+  return (exhibits ?? []).filter((exhibit) => {
+    if (exhibit.source_type === "encyclopedia") return false;
+    try {
+      const host = new URL(exhibit.url).hostname.toLowerCase();
+      return !ENCYCLOPEDIAS.some((site) => host === site || host.endsWith(`.${site}`));
+    } catch {
+      return false;
+    }
+  });
 }

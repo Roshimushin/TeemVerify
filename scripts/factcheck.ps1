@@ -21,14 +21,14 @@ $query = [uri]::EscapeDataString($Claim.Substring(0, [Math]::Min(300, $Claim.Len
 $reply = Invoke-RestMethod -TimeoutSec 30 `
     -Uri "https://factchecktools.googleapis.com/v1alpha1/claims:search?query=$query&languageCode=en&pageSize=20&key=$($settings.GOOGLE_FACTCHECK_KEY)"
 
-$leads = foreach ($claim in $reply.claims) {
-    foreach ($review in $claim.claimReview) {
+$leads = foreach ($found in $reply.claims) {
+    foreach ($review in $found.claimReview) {
         $hostName = ([uri]$review.url).Host.ToLower() -replace '^www\.', ''
         $site = $sites | Where-Object { $hostName -eq $_ -or $hostName.EndsWith(".$_") } | Select-Object -First 1
         if ($site) {
             [pscustomobject]@{
-                outlet = $review.publisher.name; url = $review.url; claim = $claim.text
-                claimant = $claim.claimant; rating = $review.textualRating; published = $review.reviewDate
+                outlet = $review.publisher.name; url = $review.url; claim = $found.text
+                claimant = $found.claimant; rating = $review.textualRating; published = $review.reviewDate
             }
         }
     }

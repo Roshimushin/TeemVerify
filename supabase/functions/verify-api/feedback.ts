@@ -8,7 +8,7 @@
 // Every change is also written into sentence memory, so pages show the new label.
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { ask, compare, enqueue, exhibitsFor, hash, type Item, remember, spentToday, today } from "./check.ts";
+import { ask, compare, enqueue, exhibitsFor, hash, type Item, noEncyclopedias, remember, spentToday, today } from "./check.ts";
 import { factCheckLeads } from "./factcheck.ts";
 import { RECHECK_SCHEMA, RECHECK_SYSTEM } from "./prompts.ts";
 
@@ -103,7 +103,7 @@ export async function challengeBlock(
     if (updateError) throw updateError;
     if (changedTier) await logTier(supabase, block_id, block.tier, out.tier, why, "model");
 
-    const linkExhibit = await replaceExhibits(supabase, block_id, out.exhibits, link);
+    const linkExhibit = await replaceExhibits(supabase, block_id, noEncyclopedias(out.exhibits), link);
     await supabase.from("challenges").update({
       status: "resolved",
       resolution: `${out.outcome === "upheld" ? "Upheld" : "Not upheld"}: ${out.response}`,
@@ -152,7 +152,7 @@ export async function reviseBlock(
   const { error } = await supabase.from("blocks").update(update).eq("id", blockId);
   if (error) throw error;
   if (tier !== block.tier) await logTier(supabase, blockId, block.tier, tier, item.reason, actor);
-  await replaceExhibits(supabase, blockId, item.exhibits ?? []);
+  await replaceExhibits(supabase, blockId, noEncyclopedias(item.exhibits));
 
   const patch = {
     text, tier, reason: item.reason, scope: item.scope, as_of: item.as_of,
