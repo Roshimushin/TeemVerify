@@ -26,6 +26,13 @@ spend Anthropic API money. Never call the `check` action from here; that one cos
    claim is updated rather than copied, and keep the fact-check among its exhibits
    (source_type `fact_checker`). Any further atomic claims are new items without a block_id.
    The claim text is the outlet's summary, so the `quote` can be null.
+   Entries with `image_url` set are **exhibits** (an email, document or screenshot, picked
+   with "Research this" on its card). Grade only provenance, following `EXHIBIT_SYSTEM` in
+   `prompts.ts`: is it real, unaltered and correctly attributed? Never grade what it says;
+   its contents are quoted speech. The `exhibit` field holds its transcribed text and what it
+   presents itself as; download the image to look at it if needed. Search for the original
+   (identifiers, names, quoted phrases, the release named) and open it. Submit
+   `{"queue_id": "<id>", "exhibit": {...}}` shaped like `EXHIBIT_SCHEMA` instead of `items`.
 3. For each queued sentence, cross-reference first, following `CROSS_REFERENCE_RULES` in
    `supabase/functions/verify-api/sources.ts` (the admitted outlets are listed in `SOURCES.md`):
    look for fact-checks by admitted fact-checkers and original reporting by the admitted news

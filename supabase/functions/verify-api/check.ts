@@ -26,6 +26,7 @@ import {
 } from "./prompts.ts";
 import { factCheckLeads } from "./factcheck.ts";
 import { reviseBlock } from "./feedback.ts";
+import { type Provenance, submitExhibit } from "./exhibits.ts";
 
 // Claude Haiku 5.5 does every paid step (Becket's choice, Oct 28, 2026).
 const MODEL = "claude-haiku-5-5";
@@ -61,6 +62,8 @@ export type Item = {
   // The exact words of the sentence this item comes from, so the page can mark just those.
   quote?: string | null;
   block_id?: string;
+  // Set on an exhibit's item: the claim is its provenance, and the card shows these details.
+  provenance?: Provenance;
 };
 
 // remembered: reused from sentence memory; from_library: matched a stored claim;
@@ -167,7 +170,13 @@ export async function lookupSentences(
 export async function checkSentences(
   supabase: SupabaseClient,
   embed: Embed,
-  { url, sentences, daily_cap_usd }: { url: string; sentences: string[]; daily_cap_usd: number },
+  { url, sentences, daily_cap_usd, exhibit_images }: {
+    url: string;
+    sentences: string[];
+    daily_cap_usd: number;
+    // Images on the page read as exhibits, so sentences describing them are compared with them.
+    exhibit_images?: string[];
+  },
 ) {
   validate(sentences, MAX_CHECK_SENTENCES, daily_cap_usd);
   const results: SentenceResult[] = sentences.map((sentence, index) => ({ index, sentence, status: "checked", items: [] }));
@@ -179,7 +188,7 @@ export async function checkSentences(
 
   let graded: Map<number, Item[]>;
   try {
-    graded = await research(supabase, url, sentences);
+    graded = await research(supabase, url, sentences, await exhibitsShown(supabase, exhibit_images));
   } catch (err) {
     for (const r of results) {
       r.status = "error";
@@ -201,13 +210,26 @@ export async function checkSentences(
   return { results, spent_today_usd: await spentToday(supabase) };
 }
 
+// What each exhibit on the page presents itself as, and its text, for comparing sentences
+// that describe it ("the emails show she was there" against an email asking to visit).
+const MAX_EXHIBIT_TEXT = 1500;
+
+async function exhibitsShown(supabase: SupabaseClient, images: string[] | undefined): Promise<string[]> {
+  if (!images?.length) return [];
+  const { data } = await supabase.from("image_memory")
+    .select("text, exhibit").in("image_url", images.slice(0, 4)).eq("unit", "exhibit");
+  return (data ?? []).map((row) =>
+    `${row.exhibit?.provenance_claim ?? "An exhibit"} Its text: "${(row.text ?? "").slice(0, MAX_EXHIBIT_TEXT)}"`
+  );
+}
+
 // ---------- the research queue (worked by Claude Code) ----------
 
 export async function queueNext(supabase: SupabaseClient, { limit = 10 }: { limit?: number }) {
   const { data, error } = await supabase
     .from("claim_queue")
     .select(
-      "id, sentence_text, page_url, seen_count, queued_at, picked_at, stream, " +
+      "id, sentence_text, page_url, seen_count, queued_at, picked_at, stream, image_url, " +
         "seed: seed_reviews(outlet, review_url, review_date, rating, rating_explanation, claimant, claim_date, appearance_url, block_id)",
     )
     .eq("status", "queued")
@@ -219,6 +241,16 @@ export async function queueNext(supabase: SupabaseClient, { limit = 10 }: { limi
     .order("queued_at", { ascending: true })
     .limit(Math.min(Number(limit) || 10, 50));
   if (error) throw error;
+  // Exhibits come with what was read from their image; they're researched on provenance.
+  const images = data.map((d) => d.image_url).filter(Boolean);
+  if (images.length) {
+    const { data: read } = await supabase.from("image_memory")
+      .select("image_url, text, description, exhibit").in("image_url", images);
+    for (const entry of data as Record<string, unknown>[]) {
+      const found = read?.find((r) => r.image_url === entry.image_url);
+      if (found) entry.exhibit = { transcribed_text: found.text, description: found.description, ...found.exhibit };
+    }
+  }
   const { count } = await supabase.from("claim_queue").select("id", { count: "exact", head: true }).eq("status", "queued");
   return { queued_total: count ?? 0, items: data };
 }
@@ -226,7 +258,8 @@ export async function queueNext(supabase: SupabaseClient, { limit = 10 }: { limi
 export async function submitResults(
   supabase: SupabaseClient,
   embed: Embed,
-  { results }: { results: { queue_id: string; items?: Item[]; failed_note?: string }[] },
+  // deno-lint-ignore no-explicit-any
+  { results }: { results: { queue_id: string; items?: Item[]; exhibit?: any; failed_note?: string }[] },
 ) {
   if (!Array.isArray(results)) throw new Error("submit_results needs results");
   const saved: { queue_id: string; ok: boolean; error?: string }[] = [];
@@ -234,7 +267,7 @@ export async function submitResults(
     try {
       const { data: queued, error } = await supabase
         .from("claim_queue")
-        .select("sentence_hash, sentence_text, page_url")
+        .select("sentence_hash, sentence_text, page_url, image_url")
         .eq("id", result.queue_id)
         .single();
       if (error) throw error;
@@ -242,6 +275,11 @@ export async function submitResults(
         await supabase.from("claim_queue")
           .update({ status: "failed", done_at: new Date().toISOString(), note: result.failed_note })
           .eq("id", result.queue_id);
+      } else if (queued.image_url) {
+        // An exhibit: one provenance result, shaped like EXHIBIT_SCHEMA.
+        if (!result.exhibit) throw new Error("This entry is an exhibit: give an exhibit result");
+        const item = await submitExhibit(supabase, embed, queued.image_url, queued.page_url ?? "", result.exhibit);
+        await finishQueued(supabase, queued.sentence_hash, queued.sentence_text, [item], "Researched by Claude Code");
       } else {
         if (!result.items?.length) throw new Error("No items given");
         const items = await saveResearched(
@@ -310,7 +348,7 @@ export async function spentToday(supabase: SupabaseClient): Promise<number> {
   return data.reduce((sum, row) => sum + Number(row.cost_usd), 0);
 }
 
-type Purpose = "triage" | "compare" | "check" | "image" | "recheck";
+type Purpose = "triage" | "compare" | "check" | "image" | "recheck" | "exhibit";
 
 async function logSpend(supabase: SupabaseClient, purpose: Purpose, usage: Anthropic.Usage) {
   const searches = usage.server_tool_use?.web_search_requests ?? 0;
@@ -387,13 +425,22 @@ export async function compare(supabase: SupabaseClient, pairs: [string, string][
   return out.results.map((r: { index: number; relation: string }) => [r.index, r.relation]);
 }
 
-async function research(supabase: SupabaseClient, url: string, sentences: string[]): Promise<Map<number, Item[]>> {
+async function research(
+  supabase: SupabaseClient,
+  url: string,
+  sentences: string[],
+  exhibits: string[] = [],
+): Promise<Map<number, Item[]>> {
   const leads = await factCheckLeads(sentences);
+  const shown = exhibits.length
+    ? "\n\nExhibits shown on this page (what each presents itself as; compare sentences that describe them):\n" +
+      exhibits.map((e) => `- ${e}`).join("\n")
+    : "";
   const tools: unknown[] = [{ type: "web_search_20250305", name: "web_search", max_uses: MAX_SEARCHES_PER_CHECK }];
   if (leads) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: MAX_FETCHES_PER_CHECK });
   const out = await ask(supabase, "check", {
     system: CHECK_SYSTEM,
-    messages: [{ role: "user", content: `Today is ${today()}. Page: ${url}\n\nSentences:\n${numbered(sentences)}${leads}` }],
+    messages: [{ role: "user", content: `Today is ${today()}. Page: ${url}\n\nSentences:\n${numbered(sentences)}${shown}${leads}` }],
     // deno-lint-ignore no-explicit-any
     tools: tools as any,
     output_config: { effort: "medium", format: { type: "json_schema", schema: CHECK_SCHEMA } },

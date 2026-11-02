@@ -65,7 +65,8 @@ function renderItem(item, sentenceStatus) {
 function renderResults(results) {
   list.replaceChildren(...results.map((r) => {
     const li = el("li");
-    if (r.image) li.append(el("div", "muted small-label", "In the image"));
+    if (r.exhibit) li.append(el("div", "muted small-label", "Exhibit: checked on whether it's real"));
+    else if (r.image) li.append(el("div", "muted small-label", "In the image"));
     li.append(el("div", "sentence", r.sentence));
     if (r.status === "error") li.append(el("div", "error", `Couldn't check: ${r.error}`));
     if (r.status === "skipped_cap") li.append(el("div", "muted", "Not checked: daily cap reached."));

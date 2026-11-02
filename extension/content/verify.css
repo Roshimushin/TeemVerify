@@ -421,6 +421,29 @@ html.tv-xray .tv-chip {
   margin: 0 0 12px;
 }
 
+/* Exhibit card: Real? / Unaltered? / Who / When / Source / Original / File ID. */
+.tv-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.tv-facts dt {
+  color: var(--tv-muted);
+  font-weight: 600;
+}
+
+.tv-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.tv-facts a {
+  color: var(--tv-tier1);
+}
+
 .tv-section {
   margin-top: 12px;
   padding-top: 10px;

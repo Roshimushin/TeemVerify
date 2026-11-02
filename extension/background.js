@@ -11,8 +11,11 @@ const MIN_WORDS = 4;
 // Progress for each tab lives in session storage under "check:<tabId>", so the popup can
 // close and reopen while work keeps running here. Shape:
 //   { url, status: "running" | "done" | "cap_reached" | "error", task, done, total,
-//     results: [{ index, sentence, status, items, error?, image? }], spentTodayUsd, error }
-// A result with "image" set came from text Claude read in that image.
+//     results: [{ index, sentence, status, items, error?, image?, exhibit? }], spentTodayUsd, error }
+// A result with "image" set came from text Claude read in that image. One with "exhibit" set is
+// a whole image graded as an exhibit (an email, document, screenshot): its one item is about
+// whether the image is real (item.provenance), and its text isn't split into sentences.
+// Its status is "exhibit" until it's checked.
 
 async function save(key, progress) {
   await chrome.storage.session.set({ [key]: progress });
@@ -38,16 +41,22 @@ async function showOnPage(tabId, progress) {
   }
 }
 
-// Reads the page's images and returns their text as sentences, image by image.
-async function imageSentences(images, dailyCapUsd) {
+// Reads the page's images. Exhibits come back whole (one item each, about whether the image is
+// real); the poster's own words in an image (memes) come back as sentences, image by image.
+async function readPageImages(images, dailyCapUsd) {
   const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
   const found = [];
+  const exhibits = [];
   for (let start = 0; start < images.length; start += IMAGE_CHUNK) {
     const reply = await callVerifyApi("read_images", {
       images: images.slice(start, start + IMAGE_CHUNK),
       daily_cap_usd: dailyCapUsd,
     });
     for (const image of reply.results) {
+      if (image.unit === "exhibit" && image.item) {
+        exhibits.push({ image: image.url, item: image.item });
+        continue;
+      }
       if (!image.has_text) continue;
       for (const line of image.text.split(/\n+/)) {
         for (const { segment } of segmenter.segment(line)) {
@@ -57,7 +66,19 @@ async function imageSentences(images, dailyCapUsd) {
       }
     }
   }
-  return found;
+  return { sentences: found, exhibits };
+}
+
+// The page's exhibit images, so checks of sentences that describe them can compare.
+function exhibitImages(progress) {
+  return progress.results.filter((r) => r.exhibit).map((r) => r.image);
+}
+
+// The words posted around the page's exhibits (title, post text, first comments), to help find
+// the original. Sent as context only.
+function wordsAround(progress) {
+  const sentences = progress.results.filter((r) => !r.exhibit && !r.image).slice(0, 8).map((r) => r.sentence);
+  return [progress.title && `Page title: ${progress.title}`, ...sentences].filter(Boolean).join("\n");
 }
 
 async function lookupPage(tabId, page) {
@@ -65,6 +86,7 @@ async function lookupPage(tabId, page) {
   const { dailyCapUsd } = await getSettings();
   const progress = {
     url: page.url,
+    title: page.title,
     status: "running",
     task: "Reading images",
     done: 0,
@@ -75,16 +97,28 @@ async function lookupPage(tabId, page) {
   };
   await save(key, progress);
 
-  // Image text comes first: the image is usually what the post and its comments are about.
-  let fromImages = [];
+  // Images come first: the image is usually what the post and its comments are about.
+  // Exhibits are whole results of their own; checking them costs money, so it waits for a click.
+  let fromImages = { sentences: [], exhibits: [] };
   if (page.images?.length) {
     try {
-      fromImages = await imageSentences(page.images, dailyCapUsd);
+      fromImages = await readPageImages(page.images, dailyCapUsd);
     } catch (err) {
       console.warn("Couldn't read images:", err);
     }
   }
-  const entries = [...fromImages, ...page.sentences.map((s) => ({ text: s.text }))];
+  for (const { image, item } of fromImages.exhibits) {
+    progress.results.push({
+      index: progress.results.length,
+      sentence: item.text,
+      status: item.tier == null ? "exhibit" : "from_library",
+      items: [item],
+      image,
+      exhibit: true,
+    });
+  }
+  const offset = progress.results.length;
+  const entries = [...fromImages.sentences, ...page.sentences.map((s) => ({ text: s.text }))];
   const sentences = entries.map((e) => e.text);
   progress.task = "Looking up";
   progress.total = sentences.length;
@@ -100,7 +134,7 @@ async function lookupPage(tabId, page) {
       // Server indexes are per chunk; store page-wide ones.
       progress.results.push(...reply.results.map((r) => ({
         ...r,
-        index: start + r.index,
+        index: offset + start + r.index,
         image: entries[start + r.index].image,
       })));
       progress.spentTodayUsd = reply.spent_today_usd;
@@ -123,13 +157,36 @@ async function checkNow(tabId, indexes) {
   const { [key]: progress } = await chrome.storage.session.get(key);
   if (!progress) return;
   const { dailyCapUsd } = await getSettings();
-  const targets = progress.results.filter((r) => indexes.includes(r.index));
+  const all = progress.results.filter((r) => indexes.includes(r.index));
+  const exhibits = all.filter((r) => r.exhibit);
+  const targets = all.filter((r) => !r.exhibit);
   progress.status = "running";
   progress.task = "Checking";
   progress.done = 0;
-  progress.total = targets.length;
+  progress.total = all.length;
   progress.error = null;
   await save(key, progress);
+
+  // Exhibits one at a time: each is a search for the original, with the image.
+  for (const target of exhibits) {
+    try {
+      const reply = await callVerifyApi("check_exhibit", {
+        image_url: target.image,
+        url: progress.url,
+        context: wordsAround(progress),
+        daily_cap_usd: dailyCapUsd,
+      });
+      Object.assign(target, { status: reply.status === "skipped_cap" ? "exhibit" : "checked", items: [reply.item] });
+      progress.spentTodayUsd = reply.spent_today_usd;
+      if (reply.status === "skipped_cap") progress.status = "cap_reached";
+    } catch (err) {
+      progress.status = "error";
+      progress.error = err.message;
+    }
+    progress.done += 1;
+    await save(key, progress);
+    if (progress.status !== "running") return;
+  }
 
   for (let start = 0; start < targets.length; start += CHECK_CHUNK) {
     const chunk = targets.slice(start, start + CHECK_CHUNK);
@@ -138,6 +195,7 @@ async function checkNow(tabId, indexes) {
         url: progress.url,
         sentences: chunk.map((r) => r.sentence),
         daily_cap_usd: dailyCapUsd,
+        exhibit_images: exhibitImages(progress),
       });
       reply.results.forEach((checked, i) => {
         const target = progress.results.find((r) => r.index === chunk[i].index);
@@ -149,7 +207,7 @@ async function checkNow(tabId, indexes) {
       progress.status = "error";
       progress.error = err.message;
     }
-    progress.done = Math.min(start + CHECK_CHUNK, targets.length);
+    progress.done = exhibits.length + Math.min(start + CHECK_CHUNK, targets.length);
     await save(key, progress);
     if (progress.status !== "running") return;
   }
@@ -216,6 +274,19 @@ async function addClaim(tabId, url, text, mode) {
   return { status: "queued", picked_waiting: picked.picked_waiting };
 }
 
+// "Research this" on an exhibit: it goes to the front of the research queue, worked for free.
+async function queueExhibit(tabId, index) {
+  const key = `check:${tabId}`;
+  const { [key]: progress } = await chrome.storage.session.get(key);
+  const target = progress?.results.find((r) => r.index === index && r.exhibit);
+  if (!target) throw new Error("That exhibit is no longer on this page's results.");
+  const data = await callVerifyApi("queue_exhibit", { image_url: target.image, url: progress.url });
+  target.items = [data.item];
+  if (data.item.tier != null) target.status = "from_library";
+  await save(key, progress);
+  return data;
+}
+
 // Messages:
 //   { type: "api", action, payload }      -> { ok, data } or { ok: false, error }
 //   { type: "lookupPage", tabId, page }   -> starts a lookup; progress appears in session storage
@@ -223,6 +294,7 @@ async function addClaim(tabId, url, text, mode) {
 //                                            claim card, tabId is the sender's tab)
 //   { type: "feedback", action, payload } -> confirm / challenge / reword / prioritize, from a card
 //   { type: "addClaim", text, mode }      -> selected text, checked "now" or researched "later"
+//   { type: "queueExhibit", index }       -> "Research this" on an exhibit's card
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "api") {
     callVerifyApi(message.action, message.payload)
@@ -238,6 +310,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === "addClaim") {
     addClaim(sender.tab?.id, sender.tab?.url, message.text, message.mode)
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message?.type === "queueExhibit") {
+    queueExhibit(sender.tab?.id, message.index)
       .then((data) => sendResponse({ ok: true, data }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;

@@ -17,10 +17,13 @@
 //   challenge      { block_id, reason_type, note?, link?, daily_cap_usd } -> saved, then re-checked
 //   reword         { block_id, text, daily_cap_usd } -> new wording, kept only if it means the same
 //   prioritize     { sentence, url? }           -> "Research this": front of the research queue
+//   check_exhibit  { image_url, url, context?, daily_cap_usd } -> an exhibit's provenance, checked now
+//   queue_exhibit  { image_url, url }           -> an exhibit to the front of the research queue
 //   spend          {}                           -> what Claude calls have cost so far today (UTC)
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { blockDetail, checkSentences, lookupSentences, queueNext, spentToday, submitResults } from "./check.ts";
+import { checkExhibit, queueExhibit } from "./exhibits.ts";
 import { challengeBlock, confirmBlock, prioritize, rewordBlock } from "./feedback.ts";
 import { readImages } from "./images.ts";
 
@@ -157,6 +160,10 @@ Deno.serve(async (req) => {
         return reply(await rewordBlock(supabase, embed, body));
       case "prioritize":
         return reply(await prioritize(supabase, body));
+      case "check_exhibit":
+        return reply(await checkExhibit(supabase, embed, body));
+      case "queue_exhibit":
+        return reply(await queueExhibit(supabase, body));
       case "spend":
         return reply({ spent_today_usd: await spentToday(supabase) });
       default:

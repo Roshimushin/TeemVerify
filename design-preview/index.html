@@ -44,6 +44,14 @@
       <div class="comment narrow"><b>reply</b>The council approved the levy in a 5-4 vote last month.</div>
     </div>
 
+    <div class="thread">
+      <h2>Post with an exhibit (an invented email screenshot)</h2>
+      <h1>PROOF Whitfield went to the island</h1>
+      <img src="samples/invented-email.png" alt="Screenshot of an email" style="width: 100%; border: 1px solid #e3e6eb; border-radius: 6px;">
+      <p>The released emails show she was there in April 2025.</p>
+      <div class="comment"><b>reply</b>That email asks to arrange a visit. It doesn't say a visit happened.</div>
+    </div>
+
     <div class="thread dark">
       <h2>Dark-mode comment (one sentence, three labels)</h2>
       <div class="comment">Yeah the mayor loved calling the governor 'Robert J. SMITH'</div>
@@ -124,7 +132,26 @@
             redraw();
             return { ok: true, data: { status: "queued" } };
           }
-          if (message.type === "checkNow") alert("In the extension, this researches the claim now (about 2¢).");
+          if (message.type === "checkNow") {
+            const target = RESULTS.find((r) => message.indexes.includes(r.index) && r.exhibit);
+            if (!target) {
+              alert("In the extension, this researches the claim now (about 2¢).");
+              return { ok: true };
+            }
+            // Simulated provenance check: the invented email can't be found anywhere.
+            await wait(1200);
+            target.status = "checked";
+            target.items = [{ ...EMAIL, tier: 3, block_id: "x", as_of: "2026-11-02",
+              reason: "No release or archive containing this email was found. Searches for NORTHVALE-REL-004417, the names and the subject line returned nothing.",
+              provenance: { ...EMAIL.provenance, status: "not_found" } }];
+            ORIGINAL_TIERS.x = 3;
+            redraw();
+            return { ok: true };
+          }
+          if (message.type === "queueExhibit") {
+            await wait(400);
+            return { ok: true, data: { picked: true, picked_waiting: 1, item: EMAIL } };
+          }
           return { ok: true };
         },
       },
@@ -134,7 +161,7 @@
       } },
     };
 
-    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3 };
+    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3, i: 3 };
     const ORIGINAL_TIERS = { ...SAMPLE_TIERS };
     const claim = (id, text, tier, reason, exhibits = [], extra = {}) =>
       ({ kind: "claim", text, tier, reason, scope: null, as_of: null, resolve_by: null, exhibits, block_id: id, ...extra });
@@ -142,7 +169,23 @@
       ({ kind, text, tier: null, reason: "", scope: null, as_of: null, resolve_by: null, exhibits: [], ...extra });
     const exhibit = (url, source_type, location) => ({ url, source_type, location });
 
+    const EMAIL_IMAGE = new URL("samples/invented-email.png", location.href).href;
+    const EMAIL = {
+      kind: "claim", tier: null, scope: null, as_of: null, resolve_by: null, exhibits: [], quote: null,
+      text: "This is a real email from Dana Whitfield to the Harbor Ridge Planning Office, dated March 3, 2025.",
+      reason: "Not checked yet. Its contents are quoted speech: the check is whether it's real.",
+      provenance: {
+        exhibit_type: "email", status: "unchecked", authentic: "unknown", unaltered: "unknown",
+        author: "Dana Whitfield", recipient: "Harbor Ridge Planning Office", date: "Monday, March 3, 2025, 9:42 AM",
+        source: null, original_url: null, file_id: null, identifiers: ["NORTHVALE-REL-004417"],
+      },
+    };
+
     const RESULTS = [
+      { sentence: EMAIL.text, items: [EMAIL], image: EMAIL_IMAGE, exhibit: true, status: "exhibit" },
+      { sentence: "The released emails show she was there in April 2025.", items: [
+        claim("i", "Dana Whitfield visited the Harbor Ridge island facility in April 2025.", 3,
+          "No evidence presented. The email shown asks to arrange a visit; a request to visit is not a visit.", []) ] },
       { sentence: "City officials said they found no credible reports of pets being harmed by new residents.", items: [
         claim("a", "Brookhaven city officials said they found no credible reports of pets being harmed by new residents.", 1,
           "The city's published statement says this, word for word.",
@@ -187,7 +230,7 @@
         claim("e", "The mayor stresses the governor's middle initial when saying his name.", 1,
           "Meeting transcripts mark the emphasis each time.", [], { quote: "J. SMITH" }),
         nonFact("opinion", "The mayor enjoys calling the governor by his full name.", { quote: "loved" }) ] },
-    ].map((r, index) => ({ ...r, index, status: "remembered" }));
+    ].map((r, index) => ({ ...r, index, status: r.status ?? "remembered" }));
   </script>
   <script src="../extension/content/marks.js"></script>
   <script>

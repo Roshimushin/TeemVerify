@@ -32,10 +32,26 @@
     fact_checker: "Fact-checker (a Tier 2 conclusion)",
     encyclopedia: "Encyclopedia",
   };
-  const ACTORS = { model: "AI review", claude_code: "AI review (research queue)", becket: "Becket" };
+  const ACTORS = { model: "AI review", claude_code: "AI review (research queue)", becket: "Becket", seed_import: "Fact-checker seed import" };
   const CHECK_NOW_LABEL = "Check now (about 2¢)";
   const RECHECK_LABEL = "Re-check (about 5¢)";
   const RESEARCH_LATER_LABEL = "Research this (free, later)";
+  const CHECK_EXHIBIT_LABEL = "Check if it's real (about 4¢)";
+
+  // Exhibit mode: an image presented as evidence is graded once, on whether it's real.
+  const EXHIBIT_TYPES = {
+    email: "Email", document: "Document", social_post: "Post", message: "Message",
+    article: "Article", quote: "Quote", chart: "Chart", other: "Exhibit",
+  };
+  const EXHIBIT_STATUS = {
+    verified: { name: "Verified", meaning: "Found in the original source, and it matches." },
+    altered: { name: "Altered or misattributed", meaning: "The original differs in a way that changes its meaning, or it's credited to the wrong person, date or source." },
+    not_found: { name: "Not found", meaning: "The original couldn't be found or opened. That isn't proof it's fake." },
+    unchecked: { name: "Can't check yet", meaning: "Not checked yet. It can be checked now, or researched later for free." },
+  };
+  const ANSWERS = { yes: "Yes", no: "No", unknown: "Not established" };
+  const QUOTED_SPEECH = "Its contents are quoted speech: Verify checks whether it's real, not whether what it says is true. " +
+    "What the words mean is your call. What the post says about it is checked separately.";
   // Why a label is challenged, in the words the card shows (values match the challenges table).
   const REASON_TYPES = [
     ["new_evidence", "I have new evidence"],
@@ -329,6 +345,7 @@
   function placeImageBadge(url, results) {
     const image = findImage(url);
     if (!image) return;
+    const exhibit = results.find((r) => r.exhibit)?.items[0];
     const categories = results.map(categoryOf);
     const worst = categories.includes("tier4") ? "t4"
       : categories.includes("tier1") ? "t1"
@@ -337,10 +354,13 @@
     const count = results.reduce((n, r) => n + r.items.filter((i) => i.kind !== "not_a_claim").length, 0);
     if (!count) return;
     const badge = el("button", "tv-image-badge");
-    badge.append(el("span", `tv-dot ${worst}`), document.createTextNode(`Text in image: ${count} labelled`));
+    const text = exhibit
+      ? `${EXHIBIT_TYPES[exhibit.provenance.exhibit_type] ?? "Exhibit"} · ${EXHIBIT_STATUS[exhibitStatus(exhibit)].name}`
+      : `Text in image: ${count} labelled`;
+    badge.append(el("span", `tv-dot ${exhibit && exhibit.tier == null ? "unchecked" : worst}`), document.createTextNode(text));
     badge.addEventListener("click", (event) => {
       event.stopPropagation();
-      openCard(results, badge.getBoundingClientRect(), "In the image");
+      openCard(results, badge.getBoundingClientRect(), exhibit ? "Exhibit" : "In the image");
     });
     layer.append(badge);
     state.images.push({ element: image, badge, results });
@@ -501,7 +521,7 @@
         .filter((i) => i.kind !== "not_a_claim")
         .sort((a, b) => (b === focusItem) - (a === focusItem));
       if (!items.length) continue;
-      if (quoteLabel || items.length > 1) card.append(el("p", "tv-quote", result.sentence));
+      if (!result.exhibit && (quoteLabel || items.length > 1)) card.append(el("p", "tv-quote", result.sentence));
       if (items.length > 1) {
         card.append(el("p", "tv-meaning", `This sentence has ${items.length} labelled parts:`));
       }
@@ -540,6 +560,8 @@
     const notice = notices.get(itemKey(item));
     notices.delete(itemKey(item));
     const noticeView = notice && el("p", notice.error ? "tv-notice error" : "tv-notice", notice.text);
+
+    if (item.provenance) return exhibitView(item, result, view, head, noticeView);
 
     if (item.kind === "claim" && item.tier == null) {
       head.append(el("span", "tv-tier unchecked", UNCHECKED.name));
@@ -588,6 +610,81 @@
     view.append(exhibitsView(item.exhibits ?? []));
 
     // Tier history and review status come from the library, loaded when the card opens.
+    if (item.block_id) {
+      view.append(feedbackView(item));
+      const history = el("div", "tv-section");
+      history.append(el("h3", "", "Tier history"), el("p", "tv-meaning", "Loading…"));
+      view.append(history);
+      loadDetail(item.block_id, history, view);
+    }
+    return view;
+  }
+
+  // ---------- exhibits ----------
+
+  // The status a checked exhibit's tier stands for (a challenge can move the tier later).
+  function exhibitStatus(item) {
+    if (item.tier == null) return "unchecked";
+    const byTier = { 1: "verified", 4: "altered" };
+    return item.provenance.status !== "unchecked" && (byTier[item.tier] ?? "not_found") === item.provenance.status
+      ? item.provenance.status
+      : byTier[item.tier] ?? "not_found";
+  }
+
+  // One card for the whole exhibit: is it real, unaltered, and who wrote it when.
+  function exhibitView(item, result, view, head, noticeView) {
+    const p = item.provenance;
+    const status = EXHIBIT_STATUS[exhibitStatus(item)];
+    const type = EXHIBIT_TYPES[p.exhibit_type] ?? "Exhibit";
+    head.append(el("span", `tv-tier ${item.tier == null ? "unchecked" : `t${item.tier}`}`, `${type} · ${status.name}`));
+    if (item.tier != null) head.append(el("span", "tv-badge", "AI draft"));
+    view.append(head);
+    if (noticeView) view.append(noticeView);
+    view.append(el("p", "tv-claim", item.text), el("p", "tv-meaning", status.meaning));
+
+    const facts = el("dl", "tv-facts");
+    const row = (label, value) => {
+      if (!value) return;
+      facts.append(el("dt", "", label));
+      const dd = el("dd");
+      if (value instanceof Node) dd.append(value);
+      else dd.textContent = value;
+      facts.append(dd);
+    };
+    row("Real?", item.tier == null ? "Not checked yet" : ANSWERS[p.authentic]);
+    row("Unaltered?", item.tier == null ? "Not checked yet" : ANSWERS[p.unaltered]);
+    row("Who", [p.author, p.recipient && `to ${p.recipient}`].filter(Boolean).join(" "));
+    row("When", p.date);
+    row("Source", p.source);
+    if (p.original_url) {
+      const link = el("a", "", hostOf(p.original_url));
+      link.href = p.original_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      row("Original", link);
+    }
+    row("File ID", p.file_id ?? (item.tier == null ? p.identifiers?.[0] : null));
+    view.append(facts, el("p", "tv-meaning", QUOTED_SPEECH));
+
+    if (item.tier == null) {
+      const button = el("button", "tv-action", CHECK_EXHIBIT_LABEL);
+      button.addEventListener("click", () => {
+        button.disabled = true;
+        button.textContent = "Checking…";
+        chrome.runtime.sendMessage({ type: "checkNow", indexes: [result.index] });
+      });
+      const later = el("button", "tv-action secondary", RESEARCH_LATER_LABEL);
+      later.title = "Moves this exhibit to the front of the research queue";
+      later.addEventListener("click", () => sendMessageFor(item, later, view, { type: "queueExhibit", index: result.index },
+        (data) => ({ text: data.picked
+          ? `In the research queue, at the front (${data.picked_waiting} picked so far). Its label appears here once it's researched.`
+          : "Already checked." })));
+      view.append(button, document.createTextNode(" "), later);
+      return view;
+    }
+
+    if (item.reason) view.append(el("p", "tv-reason", item.reason));
+    view.append(exhibitsView(item.exhibits ?? []));
     if (item.block_id) {
       view.append(feedbackView(item));
       const history = el("div", "tv-section");
@@ -728,13 +825,18 @@
 
   // Sends one feedback action through the background worker. On success the card is redrawn
   // from the updated results with `describe(data)` shown on the item; null keeps the card as is.
-  async function sendFeedback(item, button, place, action, payload, describe, busyText = "Saving…") {
+  function sendFeedback(item, button, place, action, payload, describe, busyText = "Saving…") {
+    return sendMessageFor(item, button, place, { type: "feedback", action, payload }, describe, busyText);
+  }
+
+  // Sends a message to the background worker for one item's button, then shows the outcome.
+  async function sendMessageFor(item, button, place, message, describe, busyText = "Saving…") {
     const label = button.textContent;
     button.disabled = true;
     button.textContent = busyText;
     let reply;
     try {
-      reply = await chrome.runtime.sendMessage({ type: "feedback", action, payload });
+      reply = await chrome.runtime.sendMessage(message);
     } catch (err) {
       reply = { ok: false, error: err.message };
     }
