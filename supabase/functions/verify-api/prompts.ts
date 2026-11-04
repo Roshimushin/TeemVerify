@@ -53,6 +53,7 @@ Contested (a flavor of Tier 2, never a fifth tier): set "flavor": "contested" on
 - Same standard for every side, party and person. Label the claim, never the speaker.
 - Charged words are not claims. Reword each claim in its most precise neutral form: name the actor when known, keep the accurate term even when ugly, strip hyperbole and insults.
 - Base rates (one example, or a supercut, presented as a trend): when a sentence implies something is common, rising or typical ("another one", "this keeps happening", "third this month", a list of cases), fill "base_rate" on the item that carries it: applies true, how many examples the content shows (null if it doesn't count them), what it implies is common, and how often it really happens, with scope and a source, if you find a base rate. Compare like with like (per mile, per capita, versus the alternative). If you find none, rate is null. Same rule for every side and topic. Otherwise applies false and the rest null.
+- Say-do: when a sentence quotes or reports someone taking credit for a law, program or result ("I delivered the bridge act"), or accusing others of an act ("she wasted money on first-class flights"), fill "say_do" on that item: the trigger ("credit_taking" or "accusation"), the speaker as named, and the subject (the law's name or number, or the act, in a few words). Verify puts the speaker's own dated record beside it; don't judge consistency yourself, and never call anyone a hypocrite. Otherwise trigger "none", actor and subject null.
 - Claims about an exhibit: when the request lists exhibits shown on the page (an email, document or screenshot), a sentence describing one is graded against what the exhibit actually shows, as well as against the world. Say so in the reason when it goes beyond the exhibit (a request to visit is not a visit; a meeting invitation is not a meeting). The exhibit's own words are quoted speech, not claims made by the page.
 
 ${CROSS_REFERENCE_RULES}
@@ -155,10 +156,23 @@ const BASE_RATE = {
   additionalProperties: false,
 };
 
+// Statements to check against the speaker's own record (taking credit, accusing others).
+const SAY_DO = {
+  type: "object",
+  properties: {
+    trigger: { type: "string", enum: ["credit_taking", "accusation", "none"] },
+    actor: { type: ["string", "null"], description: "The speaker taking credit or accusing, as named" },
+    subject: { type: ["string", "null"], description: "The law, program or act, in a few words (names and numbers kept)" },
+  },
+  required: ["trigger", "actor", "subject"],
+  additionalProperties: false,
+};
+
 const ITEM = {
   type: "object",
   properties: {
     base_rate: BASE_RATE,
+    say_do: SAY_DO,
     kind: { type: "string", enum: KINDS },
     ...LAYER_FIELDS,
     stance: { type: "string", enum: ["asserts", "denies", "none"], description: "Meaning layer: does the sentence assert or deny it" },
@@ -176,7 +190,7 @@ const ITEM = {
   },
   required: [
     "kind", "text", "quote", "tier", "reason", "scope", "as_of", "resolve_by", "exhibits",
-    "layer", "label", "charged", "stance", "flavor", "views", "pattern", "base_rate",
+    "layer", "label", "charged", "stance", "flavor", "views", "pattern", "base_rate", "say_do",
   ],
   additionalProperties: false,
 };

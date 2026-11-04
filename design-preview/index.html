@@ -67,6 +67,12 @@
     </div>
 
     <div class="thread">
+      <h2>Say-do: a statement beside the speaker's own record</h2>
+      <p>Senator Alvarez told voters she delivered the Northvale Bridge Act for local families.</p>
+      <div class="comment"><b>reply · accusing others</b>Councillor Reed says the mayor wasted public money on first-class flights.</div>
+    </div>
+
+    <div class="thread">
       <h2>Examples presented as a trend (base rate)</h2>
       <p>Another electric bus fire in Northvale, the third this year.</p>
       <div class="comment"><b>reply · no base rate found</b>Every week there's another story about a scooter rider getting hurt downtown.</div>
@@ -183,7 +189,7 @@
       } },
     };
 
-    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3, i: 3, j: 1, k: 2, l: 1, m: 1, n: 2, o: 2, q: 1, r: 3 };
+    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3, i: 3, j: 1, k: 2, l: 1, m: 1, n: 2, o: 2, q: 1, r: 3, s: 1, t: 3 };
     const ORIGINAL_TIERS = { ...SAMPLE_TIERS };
     const claim = (id, text, tier, reason, exhibits = [], extra = {}) =>
       ({ kind: "claim", text, tier, reason, scope: null, as_of: null, resolve_by: null, exhibits, block_id: id, ...extra });
@@ -293,6 +299,31 @@
           { flavor: "contested", views: [
             { position: "Whole-milk drinkers had 9% fewer heart events over 12 years.", held_by: "The 2026 Northvale cohort study (one study, 40,000 adults)", size: "1 large study, not yet replicated", url: "https://example.org/journals/whole-milk-2026" },
             { position: "Saturated dairy fat slightly raises LDL cholesterol; no heart benefit over skim.", held_by: "A 2024 review of 31 trials", size: "31 trials, pooled", url: "https://example.org/journals/dairy-fat-review-2024" } ] }) ] },
+      { sentence: "Senator Alvarez told voters she delivered the Northvale Bridge Act for local families.", items: [
+        claim("s", "Senator Alvarez told voters she delivered the Northvale Bridge Act.", 1,
+          "Video of her October 12 town hall shows the statement.",
+          [exhibit("https://example.org/northvale/alvarez-town-hall", "primary", "Town hall video, 14:20")],
+          { quote: "told voters she delivered the Northvale Bridge Act", as_of: "2026-10-12",
+            say_do: { trigger: "credit_taking", actor: "Senator Alvarez", subject: "Northvale Bridge Act", pairs: [{
+              trigger: "credit_taking", actor: "Senator Alvarez",
+              statement_text: "Said she delivered the Northvale Bridge Act for local families.", statement_date: "2026-10-12",
+              statement_url: "https://example.org/northvale/alvarez-town-hall",
+              action_text: "Voted no on the Northvale Bridge Act (S. 214, roll call 88); it passed 51-49.", action_date: "2025-06-12",
+              action_url: "https://example.org/senate/roll-call-88", relation: "gap",
+              bundled_context: "included a 0.5% state fuel-tax increase to pay for the bridge.",
+              stated_reason: "Said at the time she supported the bridge but opposed the fuel tax.", stated_reason_url: "https://example.org/northvale/alvarez-statement-2025" }] } }) ] },
+      { sentence: "Councillor Reed says the mayor wasted public money on first-class flights.", items: [
+        claim("t", "Northvale's mayor spent public money on first-class flights.", 3,
+          "No expense records showing first-class travel by the mayor were found.", [],
+          { quote: "the mayor wasted public money on first-class flights",
+            say_do: { trigger: "accusation", actor: "Councillor Reed", subject: "first-class flights", pairs: [{
+              trigger: "accusation", actor: "Councillor Reed",
+              statement_text: "Said the mayor wasted public money on first-class flights.", statement_date: "2026-10-28",
+              statement_url: "https://example.org/northvale/reed-post",
+              action_text: "Reed's office expensed two first-class flights to the state capital.", action_date: "2025-03-04",
+              action_url: "https://example.org/northvale/council-expenses-2025", relation: "gap",
+              bundled_context: null, stated_reason: null, stated_reason_url: null }] } }),
+        nonFact("value", "Spending public money on first-class flights is wasteful.", { quote: "wasted" }) ] },
       { sentence: "Another electric bus fire in Northvale, the third this year.", items: [
         claim("q", "Three Northvale electric buses caught fire in 2026.", 1,
           "The transit agency's incident log lists three fires, in March, July and October.",

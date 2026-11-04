@@ -27,6 +27,7 @@ import {
 import { factCheckLeads } from "./factcheck.ts";
 import { reviseBlock } from "./feedback.ts";
 import { type Provenance, submitExhibit } from "./exhibits.ts";
+import { attachSayDo, type SayDo, tidySayDo } from "./saydo.ts";
 
 // Claude Haiku 5.5 does every paid step (Becket's choice, Oct 28, 2026).
 const MODEL = "claude-haiku-5-5";
@@ -89,6 +90,8 @@ export type Item = {
   pattern?: PatternEntry[];
   // Examples presented as a trend: how many were shown and how often it really happens.
   base_rate?: BaseRate | null;
+  // Taking credit or accusing others: the speaker's matching dated statement-action pairs.
+  say_do?: SayDo | null;
 };
 
 // Claude answers "none" where a layer field doesn't apply; stored items use null.
@@ -106,6 +109,7 @@ function tidyLayers<T extends Partial<Item>>(item: T): T {
     views: layer === "meaning" || contested ? item.views ?? [] : [],
     pattern: layer === "intent" ? item.pattern ?? [] : [],
     base_rate: item.base_rate?.applies ? { ...item.base_rate, applies: undefined } : null,
+    say_do: tidySayDo(item.say_do),
   };
 }
 
@@ -115,6 +119,8 @@ function layerColumns(item: Item) {
     : item.layer === "intent" ? { pattern: item.pattern ?? [] }
     : null;
   if (item.base_rate) context = { ...context, base_rate: item.base_rate };
+  // The trigger only; pairs are looked up fresh each time, so new records show up.
+  if (item.say_do) context = { ...context, say_do: { ...item.say_do, pairs: undefined } };
   return { layer: item.layer ?? null, label: item.label ?? null, charged: item.charged ?? null, context };
 }
 
@@ -181,12 +187,12 @@ export async function lookupSentences(
       if (relation !== "same" && !denies) continue;
       const { result: r, block } = pair;
       r.status = "from_library";
-      r.items = [{
+      r.items = await attachSayDo(supabase, [{
         ...blockToItem(block),
         ...layered,
         stance: layered?.layer === "meaning" ? (denies ? "denies" : "asserts") : null,
         exhibits: await exhibitsFor(supabase, block.id),
-      }];
+      }]);
       await supabase.from("sightings").insert({ block_id: block.id, page_url: url, quoted_text: r.sentence });
       await remember(supabase, hashes[r.index], r.sentence, r.items, false);
     }
@@ -572,10 +578,10 @@ async function layersOf(supabase: SupabaseClient, ids: string[]) {
   if (!ids.length) return found;
   const { data } = await supabase.from("blocks").select("id, layer, label, charged, context, flavor").in("id", ids);
   for (const row of data ?? []) {
-    if (!row.layer && !row.charged && !row.flavor && !row.context?.base_rate) continue;
+    if (!row.layer && !row.charged && !row.flavor && !row.context?.base_rate && !row.context?.say_do) continue;
     found.set(row.id, {
       layer: row.layer, label: row.label, charged: row.charged, flavor: row.flavor,
-      base_rate: row.context?.base_rate ?? null,
+      base_rate: row.context?.base_rate ?? null, say_do: row.context?.say_do ?? null,
       views: row.context?.views ?? [], pattern: row.context?.pattern ?? [],
     });
   }
@@ -723,7 +729,7 @@ async function saveResearched(
     if (url) await supabase.from("sightings").insert({ block_id: block.id, page_url: url, quoted_text: sentence });
     saved.push({ ...item, tier, block_id: block.id });
   }
-  return saved;
+  return await attachSayDo(supabase, saved);
 }
 
 // ---------- helpers ----------

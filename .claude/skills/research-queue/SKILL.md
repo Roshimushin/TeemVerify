@@ -56,6 +56,9 @@ spend Anthropic API money. Never call the `check` action from here; that one cos
    examples are shown and how often it really happens, like with like, with a source (rate null
    if none found). A Tier 2 claim whose sides each rest on live Tier 1 evidence gets `flavor`
    `contested`, with each side in `views`.
+   Someone taking credit for a law or accusing others gets `say_do` (trigger, speaker, subject);
+   the server adds their dated record from `say_do_pairs`. To add a record (a vote, an expense),
+   use `scripts/saydo.ps1 -File pairs.json`; never use character labels like "hypocrite".
    Claims you can't settle are Tier 3, with a reason that says what was and wasn't found.
    If a sentence can't be researched at all (e.g. it needs context the sentence lacks), you may
    still grade it Tier 3 with "No evidence presented" and say what's missing.

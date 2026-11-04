@@ -35,6 +35,12 @@
   const CONTESTED = "Contested";
   const CONTESTED_MEANING = "Each side's conclusion rests on its own verified evidence; the dispute is about how much, or what it means. Shown with how large each side really is.";
   const COI_MEANING = "Shown as context. It's a reason to check the study's methods closely; it doesn't refute it or lower its tier.";
+  const SAY_DO_TITLES = { credit_taking: "Taking credit: their own record", accusation: "Accusing others: their own record" };
+  const SAY_DO_RELATIONS = { match: "Said and did match", gap: "Said and did differ" };
+  const SAY_DO_NOTES = {
+    credit_taking: "Verify shows the dated pair, the bill's other contents and their stated reason. You judge.",
+    accusation: "Verify shows the dated pair and any stated reason. You judge.",
+  };
   const DENIED = "This sentence denies it. The card is the same either way: each side's view is shown with how large it really is.";
   const UNCHECKED = {
     name: "Not checked yet",
@@ -659,6 +665,7 @@
       if (item.kind === "forecast") view.append(evidenceClock(item));
       if (item.kind === "intent") view.append(patternView(item.pattern ?? []));
       if (item.base_rate) view.append(baseRateView(item.base_rate));
+      if (item.say_do) view.append(sayDoView(item.say_do));
       if (showCharged(item)) view.append(chargedView(item));
       if (item.kind === "value") {
         const section = el("div", "tv-section");
@@ -680,6 +687,7 @@
     if (item.layer === "meaning" || contested) view.append(viewsView(item.views ?? [], contested ? "Each side, and how large it is" : undefined));
     if (item.layer === "intent") view.append(patternView(item.pattern ?? []));
     if (item.base_rate) view.append(baseRateView(item.base_rate));
+    if (item.say_do) view.append(sayDoView(item.say_do));
     if (showCharged(item)) view.append(chargedView(item));
     if (item.scope || item.as_of) {
       const scope = [item.scope, item.as_of && `as of ${formatDate(item.as_of)}`].filter(Boolean).join(", ");
@@ -1001,6 +1009,38 @@
       line.append(" · ", link);
     }
     section.append(line);
+    return section;
+  }
+
+  // Say-do: a statement beside the speaker's own dated record. Never a character label.
+  function sayDoView(sayDo) {
+    const section = el("div", "tv-section");
+    section.append(el("h3", "", SAY_DO_TITLES[sayDo.trigger] ?? "Their own record"));
+    const pairs = sayDo.pairs ?? [];
+    if (!pairs.length) {
+      section.append(el("p", "tv-meaning", `No record on file yet for ${sayDo.actor}${sayDo.subject ? ` on ${sayDo.subject}` : ""}.`));
+      return section;
+    }
+    for (const pair of pairs) {
+      const facts = el("dl", "tv-facts");
+      const row = (label, text, date, url) => {
+        const value = el("dd", "", date ? `${formatDate(date)} · ${text}` : text);
+        if (url) {
+          const link = el("a", "", hostOf(url));
+          link.href = url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          value.append(" · ", link);
+        }
+        facts.append(el("dt", "", label), value);
+      };
+      row("Said", pair.statement_text, pair.statement_date, pair.statement_url);
+      row("Did", pair.action_text, pair.action_date, pair.action_url);
+      if (pair.bundled_context) row("The bill also", pair.bundled_context);
+      if (pair.stated_reason) row("Their reason", pair.stated_reason, null, pair.stated_reason_url);
+      section.append(el("p", "tv-say-do-relation", SAY_DO_RELATIONS[pair.relation] ?? ""), facts);
+    }
+    section.append(el("p", "tv-meaning", SAY_DO_NOTES[sayDo.trigger] ?? SAY_DO_NOTES.accusation));
     return section;
   }
 

@@ -435,6 +435,12 @@ html.tv-xray .tv-chip {
   font-weight: 600;
 }
 
+.tv-say-do-relation {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .tv-layer-tag {
   margin: 0 0 4px;
   color: var(--tv-muted);

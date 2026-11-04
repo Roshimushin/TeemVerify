@@ -21,6 +21,8 @@
 //   queue_exhibit  { image_url, url }           -> an exhibit to the front of the research queue
 //   link_blocks    { from_block_id, to_block_id, relation?, note? } -> shows one block as context
 //                                                     on another (relation "coi": who funded a study)
+//   add_say_do     { pair }                     -> a dated statement-action pair, entered by hand
+//                                                     (see saydo.ts); shown on say-do cards
 //   spend          {}                           -> what Claude calls have cost so far today (UTC)
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -28,6 +30,7 @@ import { blockDetail, checkSentences, linkBlocks, lookupSentences, queueNext, sp
 import { checkExhibit, queueExhibit } from "./exhibits.ts";
 import { challengeBlock, confirmBlock, prioritize, rewordBlock } from "./feedback.ts";
 import { readImages } from "./images.ts";
+import { addSayDo } from "./saydo.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -170,6 +173,8 @@ Deno.serve(async (req) => {
         return reply(await queueExhibit(supabase, body));
       case "link_blocks":
         return reply(await linkBlocks(supabase, body));
+      case "add_say_do":
+        return reply(await addSayDo(supabase, body));
       case "spend":
         return reply({ spent_today_usd: await spentToday(supabase) });
       default:
