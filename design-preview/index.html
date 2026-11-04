@@ -53,6 +53,14 @@
       <div class="comment"><b>reply</b>That email asks to arrange a visit. It doesn't say a visit happened.</div>
     </div>
 
+    <div class="thread">
+      <h2>Labels that imply intent (three layers) and charged words</h2>
+      <p>Councillor Reed gave a Nazi salute at the Northvale rally.</p>
+      <div class="comment"><b>reply · a denial gets the same card</b>That wasn't a Nazi salute, Reed was just waving to the crowd.</div>
+      <div class="comment"><b>reply · the word used clinically</b>The 1912 Northvale asylum report classed 40 patients as 'morons'.</div>
+      <div class="comment"><b>reply · the same word as an insult</b>Only a moron would vote for the levy.</div>
+    </div>
+
     <div class="thread dark">
       <h2>Dark-mode comment (one sentence, three labels)</h2>
       <div class="comment">Yeah the mayor loved calling the governor 'Robert J. SMITH'</div>
@@ -162,13 +170,26 @@
       } },
     };
 
-    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3, i: 3 };
+    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3, i: 3, j: 1, k: 2, l: 1, m: 1, n: 2 };
     const ORIGINAL_TIERS = { ...SAMPLE_TIERS };
     const claim = (id, text, tier, reason, exhibits = [], extra = {}) =>
       ({ kind: "claim", text, tier, reason, scope: null, as_of: null, resolve_by: null, exhibits, block_id: id, ...extra });
     const nonFact = (kind, text, extra = {}) =>
       ({ kind, text, tier: null, reason: "", scope: null, as_of: null, resolve_by: null, exhibits: [], ...extra });
     const exhibit = (url, source_type, location) => ({ url, source_type, location });
+
+    // Act vs. form vs. intent: an assertion and its denial share the meaning layer's views.
+    const SALUTE_VIEWS = [
+      { position: "It was a Nazi salute: the arm angle, palm and repetition match the defined form.", held_by: "Historians of fascism quoted in Northvale press", size: "Most experts quoted (6 of 7)", url: "https://example.org/northvale/experts" },
+      { position: "It was a wave to the crowd.", held_by: "Councillor Reed and his office", size: "The person involved", url: "https://example.org/northvale/reed-statement" },
+      { position: "The footage is too short to tell.", held_by: "One historian quoted", size: "1 of 7 experts quoted", url: null },
+    ];
+    const SALUTE_PATTERN = [
+      { date: "2024-05", action: "Reed shared a post using a slogan from a banned group; he deleted it two days later.", url: "https://example.org/northvale/archive/post" },
+      { date: "2026-10-20", action: "Reed made the gesture twice at the rally, on video.", url: "https://example.org/northvale/rally-video" },
+      { date: "2026-10-21", action: "Reed said in a statement that he was waving to the crowd.", url: "https://example.org/northvale/reed-statement" },
+    ];
+    const layered = (layer, extra) => ({ layer, label: "Nazi salute", charged: null, ...extra });
 
     const EMAIL_IMAGE = new URL("samples/invented-email.png", location.href).href;
     const EMAIL = {
@@ -227,6 +248,32 @@
       { sentence: "A local group says the newcomers are organizing a secret pet market on weekends.", items: [
         claim("h", "Brookhaven newcomers are organizing a secret pet market on weekends.", 3,
           "Extraordinary claim, no evidence presented.") ] },
+      { sentence: "Councillor Reed gave a Nazi salute at the Northvale rally.", items: [
+        claim("j", "Councillor Reed made a gesture identical in form to the Nazi salute at the Northvale rally.", 1,
+          "Rally video shows a straight right arm raised at an upward angle, palm down, twice. Those are the defined criteria of the form.",
+          [exhibit("https://example.org/northvale/rally-video", "primary", "0:42 and 1:15")],
+          { quote: "gave a Nazi salute", ...layered("form") }),
+        claim("k", "Councillor Reed's gesture at the Northvale rally was a Nazi salute.", 2,
+          "Most experts quoted identify it as one; Reed says it was a wave.", [],
+          { quote: "Nazi salute", ...layered("meaning", { charged: "Nazi salute", stance: "asserts", views: SALUTE_VIEWS }) }),
+        nonFact("intent", "Councillor Reed meant to salute Nazism.", { quote: "gave a Nazi salute", ...layered("intent", { pattern: SALUTE_PATTERN }) }) ] },
+      { sentence: "That wasn't a Nazi salute, Reed was just waving to the crowd.", items: [
+        claim("k", "Councillor Reed's gesture at the Northvale rally was a Nazi salute.", 2,
+          "Most experts quoted identify it as one; Reed says it was a wave.", [],
+          { quote: "wasn't a Nazi salute", ...layered("meaning", { charged: "Nazi salute", stance: "denies", views: SALUTE_VIEWS }) }),
+        nonFact("intent", "Councillor Reed meant the gesture as a wave.", { quote: "was just waving to the crowd", ...layered("intent", { pattern: SALUTE_PATTERN }) }) ] },
+      { sentence: "The 1912 Northvale asylum report classed 40 patients as 'morons'.", items: [
+        claim("l", "The 1912 Northvale asylum report classed 40 patients as \"morons\".", 1,
+          "The digitized report lists them under that heading.",
+          [exhibit("https://example.org/northvale/archive/asylum-1912", "primary", "Table 2")],
+          { quote: "classed 40 patients as 'morons'", layer: "form", label: "moron", charged: "morons" }),
+        claim("m", "In the 1912 report, \"moron\" was a clinical category, not an insult.", 1,
+          "\"Moron\" was a formal diagnostic term in psychology from 1910 until it fell out of use; the report defines it by test scores.",
+          [exhibit("https://example.org/northvale/archive/asylum-1912", "primary", "Definitions, p. 3")],
+          { quote: "'morons'", layer: "meaning", label: "moron", charged: null, stance: "asserts",
+            views: [{ position: "A clinical category of its time, defined by test scores.", held_by: "Historians of psychiatry", size: "Undisputed", url: null }] }) ] },
+      { sentence: "Only a moron would vote for the levy.", items: [
+        nonFact("opinion", "People who vote for the levy are making a poor judgment.", { quote: "Only a moron would vote for the levy", charged: "moron" }) ] },
       { sentence: "Yeah the mayor loved calling the governor 'Robert J. SMITH'", items: [
         claim("d", "The mayor has publicly called the governor by his full name, \"Robert J. Smith\".", 1,
           "Video of three council meetings shows the mayor using the full name.",

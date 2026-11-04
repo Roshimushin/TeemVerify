@@ -48,7 +48,10 @@ const MAX_FETCHES_PER_CHECK = 3;
 const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
 
 type Embed = (text: string) => Promise<string>;
-type Kind = "claim" | "value" | "opinion" | "forecast" | "not_a_claim";
+type Kind = "claim" | "value" | "opinion" | "forecast" | "intent" | "not_a_claim";
+type Layer = "form" | "meaning" | "intent";
+type View = { position: string; held_by: string; size: string; url: string | null };
+type PatternEntry = { date: string | null; action: string; url: string | null };
 
 export type Item = {
   kind: Kind;
@@ -64,7 +67,40 @@ export type Item = {
   block_id?: string;
   // Set on an exhibit's item: the claim is its provenance, and the card shows these details.
   provenance?: Provenance;
+  // A label that implies intent splits into layers sharing one label (act, form, intent):
+  // form (said or done), meaning (what it's called, with each side's views) and intent
+  // (ungraded unless self-documented, with the dated pattern). charged: a charged term.
+  layer?: Layer | null;
+  label?: string | null;
+  charged?: string | null;
+  // Whether the sentence asserts or denies the meaning layer; the card is the same either way.
+  stance?: "asserts" | "denies" | null;
+  views?: View[];
+  pattern?: PatternEntry[];
 };
+
+// Claude answers "none" where a layer field doesn't apply; stored items use null.
+function tidyLayers<T extends Partial<Item>>(item: T): T {
+  const none = (v: unknown) => (v === "none" || v === "" || v == null ? null : v);
+  const layer = none(item.layer) as Layer | null;
+  return {
+    ...item,
+    layer,
+    label: layer ? none(item.label) as string | null : null,
+    charged: none(item.charged) as string | null,
+    stance: layer === "meaning" ? (none(item.stance) as Item["stance"]) ?? "asserts" : null,
+    views: layer === "meaning" ? item.views ?? [] : [],
+    pattern: layer === "intent" ? item.pattern ?? [] : [],
+  };
+}
+
+// The layer fields stored with a block or non-fact statement.
+function layerColumns(item: Item) {
+  const context = item.layer === "meaning" ? { views: item.views ?? [] }
+    : item.layer === "intent" ? { pattern: item.pattern ?? [] }
+    : null;
+  return { layer: item.layer ?? null, label: item.label ?? null, charged: item.charged ?? null, context };
+}
 
 // remembered: reused from sentence memory; from_library: matched a stored claim;
 // classified: sorted now, nothing to research; queued: has claims waiting for research;
@@ -119,12 +155,22 @@ export async function lookupSentences(
   }
   if (pairs.length > 0 && await spentToday(supabase) < cap) {
     const relations = await compare(supabase, pairs.map((p) => [p.result.sentence, p.block.claim_text]));
+    const layers = await layersOf(supabase, pairs.map((p) => p.block.id));
     for (const [pairIndex, relation] of relations) {
       const pair = pairs[pairIndex];
-      if (!pair || relation !== "same" || pair.result.status !== "error") continue;
+      if (!pair || pair.result.status !== "error") continue;
+      const layered = layers.get(pair.block.id);
+      // A denial of a meaning layer ("it wasn't X") gets the same card as the assertion.
+      const denies = relation === "opposite" && layered?.layer === "meaning";
+      if (relation !== "same" && !denies) continue;
       const { result: r, block } = pair;
       r.status = "from_library";
-      r.items = [{ ...blockToItem(block), exhibits: await exhibitsFor(supabase, block.id) }];
+      r.items = [{
+        ...blockToItem(block),
+        ...layered,
+        stance: layered?.layer === "meaning" ? (denies ? "denies" : "asserts") : null,
+        exhibits: await exhibitsFor(supabase, block.id),
+      }];
       await supabase.from("sightings").insert({ block_id: block.id, page_url: url, quoted_text: r.sentence });
       await remember(supabase, hashes[r.index], r.sentence, r.items, false);
     }
@@ -136,7 +182,7 @@ export async function lookupSentences(
     const [match] = await topMatches(supabase, "match_non_facts", embeddings.get(r.index)!, NON_FACT_MATCH_THRESHOLD, 1);
     if (!match) continue;
     r.status = "remembered";
-    r.items = [nonFactItem(match.tag as Kind, match.statement_text, null)];
+    r.items = [{ ...nonFactItem(match.tag as Kind, match.statement_text, null), ...(await nonFactLayers(supabase, match.id)) }];
     await remember(supabase, hashes[r.index], r.sentence, r.items, false);
   }
   rest = rest.filter((r) => r.status === "error");
@@ -301,7 +347,7 @@ export async function blockDetail(supabase: SupabaseClient, { block_id }: { bloc
   if (!block_id) throw new Error("block_detail needs block_id");
   const { data: block, error } = await supabase
     .from("blocks")
-    .select("id, claim_text, tier, status, scope, as_of, reason, created_at, updated_at")
+    .select("id, claim_text, tier, status, scope, as_of, reason, created_at, updated_at, layer, label, charged, context")
     .eq("id", block_id)
     .single();
   if (error) throw error;
@@ -402,14 +448,17 @@ async function triage(supabase: SupabaseClient, sentences: string[]): Promise<Ma
     messages: [{ role: "user", content: `Today is ${today()}.\n\nSentences:\n${numbered(sentences)}` }],
     output_config: { effort: "low", format: { type: "json_schema", schema: TRIAGE_SCHEMA } },
   });
-  type Sorted = { kind: Kind; text: string; quote: string; resolve_by: string | null };
+  type Sorted = { kind: Kind; text: string; quote: string; resolve_by: string | null; layer: string; label: string; charged: string };
   return new Map(out.results.map((r: { index: number; items: Sorted[] }) => [
     r.index,
-    r.items.map((i) => ({
+    r.items.map((i) => tidyLayers({
       ...(i.kind === "claim"
         ? { ...nonFactItem("claim", i.text, null), reason: "Waiting for research." }
         : nonFactItem(i.kind, i.text, i.resolve_by)),
       quote: fitQuote(sentences[r.index] ?? "", i.quote),
+      layer: i.layer as Layer,
+      label: i.label,
+      charged: i.charged,
     })),
   ]));
 }
@@ -474,6 +523,27 @@ function blockToItem(block: LibraryMatch): Item {
     exhibits: [],
     block_id: block.id,
   };
+}
+
+// Layer fields of library blocks, by id (the meaning search returns only the claim).
+async function layersOf(supabase: SupabaseClient, ids: string[]) {
+  const found = new Map<string, Partial<Item>>();
+  if (!ids.length) return found;
+  const { data } = await supabase.from("blocks").select("id, layer, label, charged, context").in("id", ids);
+  for (const row of data ?? []) {
+    if (!row.layer && !row.charged) continue;
+    found.set(row.id, {
+      layer: row.layer, label: row.label, charged: row.charged,
+      views: row.context?.views ?? [], pattern: row.context?.pattern ?? [],
+    });
+  }
+  return found;
+}
+
+async function nonFactLayers(supabase: SupabaseClient, id: string): Promise<Partial<Item>> {
+  const { data } = await supabase.from("non_fact_tags").select("layer, label, charged, context").eq("id", id).single();
+  if (!data?.layer && !data?.charged) return {};
+  return { layer: data.layer, label: data.label, charged: data.charged, pattern: data.context?.pattern ?? [] };
 }
 
 function nonFactItem(kind: Kind, text: string, resolveBy: string | null): Item {
@@ -541,6 +611,7 @@ async function saveNonFact(supabase: SupabaseClient, embed: Embed, url: string, 
     resolve_by: item.resolve_by,
     page_url: url,
     embedding: await embed(item.text),
+    ...layerColumns(item),
   });
   if (error) throw error;
 }
@@ -557,7 +628,7 @@ async function saveResearched(
 ): Promise<Item[]> {
   const saved: Item[] = [];
   for (const given of items) {
-    const item = { ...given, quote: fitQuote(sentence, given.quote), exhibits: noEncyclopedias(given.exhibits) };
+    const item = tidyLayers({ ...given, quote: fitQuote(sentence, given.quote), exhibits: noEncyclopedias(given.exhibits) });
     if (item.kind === "not_a_claim") {
       saved.push(item);
       continue;
@@ -582,6 +653,7 @@ async function saveResearched(
       as_of: item.as_of,
       reason: item.reason,
       embedding: await embed(item.text),
+      ...layerColumns(item),
     }).select("id").single();
     if (error) throw error;
 

@@ -21,7 +21,18 @@
     value: { name: "Value", meaning: "This is a values question. Facts can inform it, but they can't settle it." },
     opinion: { name: "Opinion", meaning: "A matter of taste or judgment. Opinions aren't graded true or false." },
     forecast: { name: "Forecast ⏱", meaning: "A prediction. It can only be checked once its date arrives." },
+    intent: { name: "Intent", meaning: "What someone meant or wanted. Verify doesn't grade intent unless the person documented it themselves; it shows the dated record and you judge." },
   };
+  // A label that implies intent ("gave a Nazi salute") is split into layers, each labelled on its own.
+  const LAYERS = {
+    form: "1 · What was said or done",
+    meaning: "2 · What it's called, or what the words mean here",
+    intent: "3 · What was meant",
+  };
+  const LAYER_ORDER = ["form", "meaning", "intent"];
+  const CHARGED = "Charged term";
+  const CHARGED_MEANING = "That the words were used is a fact. What they mean here depends on the context, and is graded on it. What the speaker intended isn't graded.";
+  const DENIED = "This sentence denies it. The card is the same either way: each side's view is shown with how large it really is.";
   const UNCHECKED = {
     name: "Not checked yet",
     meaning: "This is a checkable claim, but it hasn't been researched yet. It's in the research queue.",
@@ -272,20 +283,25 @@
       if (lead) state.marks.push({ range: sentenceRange, category: categoryOfItem(lead), result, item: lead });
 
       const nonFacts = items.filter((i) => NON_FACTS[i.kind]);
-      if (nonFacts.length) placed.push({ range: sentenceRange, nonFacts, result });
+      // Charged terms get a chip whatever the intent; it lights up just the term.
+      const charged = items.filter((i) => i.charged);
+      const chargedRanges = charged.map((i) => findQuote(index, spot, i.charged)).filter(Boolean).map((w) => rangeAt(index, w));
+      if (nonFacts.length || charged.length) placed.push({ range: sentenceRange, nonFacts, charged, chargedRanges, result });
     }
 
     // One chip at the end of each sentence, listing its non-fact parts by type with a count
     // ("Opinion ·2 · Forecast"), so a sentence full of opinions isn't buried in chips.
     // Ranges are live, so the marks found above stay correct as chips are inserted.
-    for (const { range, nonFacts, result } of placed) {
+    for (const { range, nonFacts, charged, chargedRanges, result } of placed) {
       const end = range.cloneRange();
       end.collapse(false);
-      const chip = el("span", "tv-chip", chipLabel(nonFacts));
+      const label = [nonFacts.length && chipLabel(nonFacts), charged.length && CHARGED].filter(Boolean).join(" · ");
+      const chip = el("span", "tv-chip", label);
       chip.dataset.tvChip = "true";
-      chip.title = nonFacts.map((i) => i.text).join("\n");
+      chip.title = [...nonFacts.map((i) => i.text), ...charged.map((i) => `${CHARGED}: “${i.charged}”`)].join("\n");
       end.insertNode(chip);
-      const entry = { element: chip, result, items: nonFacts };
+      const ranges = [...nonFacts.map((i) => state.ranges.get(i)).filter(Boolean), ...chargedRanges];
+      const entry = { element: chip, result, items: [...nonFacts, ...charged.filter((i) => !nonFacts.includes(i))], ranges };
       // Hovering lights up the chip's own words in place.
       chip.addEventListener("mouseenter", () => showChipWords(entry));
       chip.addEventListener("mouseleave", () => CSS.highlights.delete("tv-chip-words"));
@@ -306,8 +322,7 @@
   }
 
   function showChipWords(chip) {
-    const ranges = chip.items.map((i) => state.ranges.get(i)).filter(Boolean);
-    if (ranges.length) CSS.highlights.set("tv-chip-words", new Highlight(...ranges));
+    if (chip.ranges.length) CSS.highlights.set("tv-chip-words", new Highlight(...chip.ranges));
   }
 
   // Marks need brighter colors on dark backgrounds. Light-colored text means a dark
@@ -465,7 +480,7 @@
       panel.append(row);
     }
     const chipRow = el("div", "tv-legend-row");
-    chipRow.append(el("span", "tv-swatch", "Chips"), el("span", "", "Value · Opinion ·2 · Forecast ⏱ (X-ray): one per sentence, with a count. Not graded."));
+    chipRow.append(el("span", "tv-swatch", "Chips"), el("span", "", "Value · Opinion ·2 · Forecast ⏱ · Intent · Charged term (X-ray): one per sentence, with a count. Not graded."));
     panel.append(chipRow);
     panel.append(el("p", "tv-legend-note",
       "Underlines are facts; chips are non-facts. Every label is an AI draft until reviewed. Tap a mark for the evidence."));
@@ -533,20 +548,46 @@
     card.append(head);
 
     for (const result of results) {
-      const items = result.items
-        .filter((i) => i.kind !== "not_a_claim")
-        .sort((a, b) => (b === focusItem) - (a === focusItem));
+      const items = result.items.filter((i) => i.kind !== "not_a_claim");
       if (!items.length) continue;
       if (!result.exhibit && (quoteLabel || items.length > 1)) card.append(el("p", "tv-quote", result.sentence));
       if (items.length > 1) {
         card.append(el("p", "tv-meaning", `This sentence has ${items.length} labelled parts:`));
       }
-      for (const item of items) card.append(itemView(item, result));
+      for (const group of cardGroups(items, focusItem)) {
+        if (group.label) {
+          card.append(el("p", "tv-layer-head", `“${group.label}”, split into ${group.items.length} layers, each labelled on its own:`));
+        }
+        for (const item of group.items) card.append(itemView(item, result));
+      }
     }
 
     layer.append(card);
     placeCard(anchor);
     if (focusItem && flashFocus) flash(focusItem);
+  }
+
+  // The card's order: the tapped part (and its layers) first; each label's layers together,
+  // in order (said or done, then what it's called, then what was meant).
+  function cardGroups(items, focusItem) {
+    const groups = [];
+    const byLabel = new Map();
+    for (const item of items) {
+      const key = item.layer && LAYERS[item.layer] && item.label ? item.label.toLowerCase() : null;
+      if (key && byLabel.has(key)) {
+        byLabel.get(key).items.push(item);
+        continue;
+      }
+      const group = { label: key ? item.label : null, items: [item] };
+      if (key) byLabel.set(key, group);
+      groups.push(group);
+    }
+    for (const group of groups) {
+      if (group.label && group.items.length < 2) group.label = null;
+      group.items.sort((a, b) => LAYER_ORDER.indexOf(a.layer) - LAYER_ORDER.indexOf(b.layer));
+    }
+    const hasFocus = (g) => g.items.includes(focusItem);
+    return groups.sort((a, b) => hasFocus(b) - hasFocus(a));
   }
 
   let flashTimer = 0;
@@ -556,7 +597,10 @@
   }
 
   function flashAll(items) {
-    const ranges = items.map((i) => state.ranges.get(i)).filter(Boolean);
+    flashRanges(items.map((i) => state.ranges.get(i)).filter(Boolean));
+  }
+
+  function flashRanges(ranges) {
     if (!ranges.length) return;
     CSS.highlights.set("tv-flash", new Highlight(...ranges));
     clearTimeout(flashTimer);
@@ -582,12 +626,14 @@
     const noticeView = notice && el("p", notice.error ? "tv-notice error" : "tv-notice", notice.text);
 
     if (item.provenance) return exhibitView(item, result, view, head, noticeView);
+    if (item.layer && LAYERS[item.layer]) view.append(el("p", "tv-layer-tag", LAYERS[item.layer]));
 
     if (item.kind === "claim" && item.tier == null) {
       head.append(el("span", "tv-tier unchecked", UNCHECKED.name));
       view.append(head);
       if (noticeView) view.append(noticeView);
       view.append(el("p", "tv-claim", item.text), el("p", "tv-meaning", UNCHECKED.meaning));
+      if (showCharged(item)) view.append(chargedView(item));
       const button = el("button", "tv-action", CHECK_NOW_LABEL);
       button.addEventListener("click", () => {
         button.disabled = true;
@@ -608,6 +654,8 @@
       head.append(el("span", "tv-tier nonfact", info.name));
       view.append(head, el("p", "tv-claim", item.text), el("p", "tv-meaning", info.meaning));
       if (item.kind === "forecast") view.append(evidenceClock(item));
+      if (item.kind === "intent") view.append(patternView(item.pattern ?? []));
+      if (showCharged(item)) view.append(chargedView(item));
       if (item.kind === "value") {
         const section = el("div", "tv-section");
         section.append(el("h3", "", "Facts that bear on it"),
@@ -622,7 +670,11 @@
     view.append(head);
     if (noticeView) view.append(noticeView);
     view.append(el("p", "tv-claim", item.text), el("p", "tv-meaning", tier.meaning));
+    if (item.stance === "denies") view.append(el("p", "tv-notice", DENIED));
     if (item.reason) view.append(el("p", "tv-reason", item.reason));
+    if (item.layer === "meaning") view.append(viewsView(item.views ?? []));
+    if (item.layer === "intent") view.append(patternView(item.pattern ?? []));
+    if (showCharged(item)) view.append(chargedView(item));
     if (item.scope || item.as_of) {
       const scope = [item.scope, item.as_of && `as of ${formatDate(item.as_of)}`].filter(Boolean).join(", ");
       view.append(el("p", "tv-meaning", `Scope: ${scope}`));
@@ -872,6 +924,70 @@
     reopenCard();
   }
 
+  // Meaning layer: each side's position, who holds it, and how large that side really is.
+  function viewsView(views) {
+    const section = el("div", "tv-section");
+    section.append(el("h3", "", "Views, and how large each side is"));
+    if (!views.length) {
+      section.append(el("p", "tv-meaning", "No expert views found yet."));
+      return section;
+    }
+    const list = el("ul");
+    for (const v of views) {
+      const li = el("li");
+      li.append(el("div", "", v.position));
+      const who = el("div", "tv-source-type", `${v.held_by} · ${v.size}`);
+      if (v.url) {
+        const link = el("a", "", hostOf(v.url));
+        link.href = v.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        who.append(" · ", link);
+      }
+      li.append(who);
+      list.append(li);
+    }
+    section.append(list);
+    return section;
+  }
+
+  // Intent layer: the dated record. Readers judge the pattern; Verify doesn't name a motive.
+  function patternView(pattern) {
+    const section = el("div", "tv-section");
+    section.append(el("h3", "", "What the record shows"));
+    if (!pattern.length) {
+      section.append(el("p", "tv-meaning", "No dated actions on record yet."));
+      return section;
+    }
+    const list = el("ul");
+    for (const entry of pattern) {
+      const li = el("li");
+      if (entry.date) li.append(el("span", "tv-source-type", `${entry.date} · `));
+      li.append(entry.action);
+      if (entry.url) {
+        const link = el("a", "", hostOf(entry.url));
+        link.href = entry.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        li.append(" · ", link);
+      }
+      list.append(li);
+    }
+    section.append(list);
+    return section;
+  }
+
+  // A label split into layers explains its charged term once, on the meaning layer.
+  function showCharged(item) {
+    return item.charged && (!item.layer || item.layer === "meaning");
+  }
+
+  function chargedView(item) {
+    const section = el("div", "tv-section");
+    section.append(el("h3", "", `${CHARGED}: “${item.charged}”`), el("p", "tv-meaning", CHARGED_MEANING));
+    return section;
+  }
+
   function exhibitsView(exhibits) {
     const section = el("div", "tv-section");
     section.append(el("h3", "", "Exhibits"));
@@ -1009,7 +1125,7 @@
       const found = state.chips.find((c) => c.element === chip);
       if (found) {
         openCard([found.result], chip.getBoundingClientRect(), undefined, found.items[0], { flash: false });
-        flashAll(found.items);
+        flashRanges(found.ranges);
       }
       return;
     }

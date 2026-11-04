@@ -47,6 +47,11 @@ spend Anthropic API money. Never call the `check` action from here; that one cos
    you actually opened. Encyclopedias are never exhibits: follow them to primary sources.
    Give every item a `quote`: the exact words of the sentence it comes from (see the quote
    rule in `prompts.ts`), so the page underlines only those words.
+   A label that implies intent ("gave a Nazi salute") or a charged word splits into layers, one
+   item each, sharing a `label`: `form` (said or done, can be Tier 1), `meaning` (what it's
+   called, usually Tier 2, with `views` and a `stance` of asserts or denies) and `intent` (kind
+   `intent`, untiered, with a dated `pattern`, unless self-documented). Charged terms go in
+   `charged`, on the meaning layer when split. See the layer rules in `CLASSIFY_RULES`.
    Claims you can't settle are Tier 3, with a reason that says what was and wasn't found.
    If a sentence can't be researched at all (e.g. it needs context the sentence lacks), you may
    still grade it Tier 3 with "No evidence presented" and say what's missing.

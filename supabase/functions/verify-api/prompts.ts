@@ -10,10 +10,17 @@ Split each sentence into atomic claims (one checkable statement each). Classify 
 - "value": a moral or political judgment ("X is wrong").
 - "opinion": taste, character judgments ("coward"), unbounded superlatives ("best ever"), predictions of no specific outcome.
 - "forecast": a prediction of a specific checkable future outcome. Give a resolve_by date if one can be inferred.
+- "intent": what someone meant, wanted or believed, inferred rather than documented ("he meant it as a threat", "she did it to hurt them"). Never tiered.
 - "not_a_claim": questions without an embedded accusation, greetings, credits, jokes, instructions, fragments.
-Values, opinions and forecasts are never tiered. If a value or opinion rests on a factual claim, extract that claim separately ("I don't believe X happened" = an ungraded belief + the graded claim "X happened"). Hyperbole and charged words don't make a sentence an opinion if a checkable claim sits underneath: extract the claim.
+Values, opinions, forecasts and intents are never tiered. If a value or opinion rests on a factual claim, extract that claim separately ("I don't believe X happened" = an ungraded belief + the graded claim "X happened"). Hyperbole and charged words don't make a sentence an opinion if a checkable claim sits underneath: extract the claim.
 Reword each item in its most precise neutral form: name the actor when known, keep the accurate term even when ugly, strip hyperbole and insults.
 
+Labels that imply intent, and charged words: split into three layers, one item each, all with the same "label" (the label or term itself, e.g. "Nazi salute"):
+- layer "form": the act, or the words said or written. A "claim". When the label is defined by observable criteria (a gesture, a legal form, a swim stroke) and the record shows them met, word it as the form: "X made a gesture identical in form to the Nazi salute", "X used the word 'Y' in a post". Can reach Tier 1.
+- layer "meaning": what the act or words are called or mean in this context (identification, or how the term is used here). A "claim", usually Tier 2: give "views", the positions experts and the people involved hold, with who holds each and how large each side really is (never a false 50/50). List only positions you found someone holding; leave views empty if you found none. Word it as the positive identification ("X's gesture was a Nazi salute") even when the sentence denies it, and set "stance": "denies"; the views then show both sides, so a denial and an assertion get the same card.
+- layer "intent": what the person meant. Kind "intent", untiered, unless they documented it themselves (a written plan, a confession, a recorded statement of purpose), then a "claim" that can reach Tier 1. A court finding of intent is a Tier 1 event (the verdict happened), not proof of the intent. Never assert intent yourself. Give "pattern": dated actions on record that bear on it, oldest first, each with a source when you have one.
+Only split the layers the sentence actually raises: a sentence that only says "X gave a Nazi salute" raises form, meaning and intent (the everyday meaning carries intent); "the word was used clinically" raises form and meaning. Every other item has layer "none" and stance "none".
+"charged": when an item's words include a charged term (a slur, an insult, a loaded label, a euphemism that hides who acted), the term exactly as written; otherwise null. Set it whatever the intent; it gets a language-layer chip. When a label is split into layers, set it on the meaning layer only. The same word can be clinical in one place and an insult in another: grade the meaning layer on the context.
 For every item also give "quote": the words in the original sentence that this item comes from, copied exactly (same spelling, capitals and punctuation), as one continuous stretch. Keep it as short as possible while still covering what the item states: for a claim, the words that make the claim; for an opinion or value, the judging words (e.g. "loved", "too little"). Use the whole sentence only when the item really spans all of it. Example: "Yeah the mayor loved calling the governor 'Robert J. SMITH'" -> claim "The mayor has publicly called the governor Robert J. Smith" quote "calling the governor 'Robert J. SMITH'"; opinion "The mayor enjoys it" quote "loved".`;
 
 export const TRIAGE_SYSTEM = `You sort sentences from a web page for Verify, a fact-labelling browser extension. Don't research anything; only classify. Same standard for every side, party and person.
@@ -99,10 +106,46 @@ const EXHIBIT = {
   additionalProperties: false,
 };
 
+const KINDS = ["claim", "value", "opinion", "forecast", "intent", "not_a_claim"];
+
+// The three layers a label that implies intent splits into (Fact Library Rules: act, form, intent).
+const LAYER_FIELDS = {
+  layer: { type: "string", enum: ["form", "meaning", "intent", "none"] },
+  label: { type: ["string", "null"], description: "The label or term the layers split, the same for each layer" },
+  charged: { type: ["string", "null"], description: "A charged term in the item's words, exactly as written" },
+};
+
+const VIEW = {
+  type: "object",
+  properties: {
+    position: { type: "string", description: "What this side holds, in one line" },
+    held_by: { type: "string", description: "Who holds it (experts, bodies, the person involved)" },
+    size: { type: "string", description: "How large this side really is, e.g. 'most historians quoted', 'one commentator'" },
+    url: { type: ["string", "null"] },
+  },
+  required: ["position", "held_by", "size", "url"],
+  additionalProperties: false,
+};
+
+const PATTERN_ENTRY = {
+  type: "object",
+  properties: {
+    date: { type: ["string", "null"], description: "YYYY-MM-DD, or YYYY-MM or YYYY when that's all that's known" },
+    action: { type: "string", description: "What was done or said, as a plain fact" },
+    url: { type: ["string", "null"] },
+  },
+  required: ["date", "action", "url"],
+  additionalProperties: false,
+};
+
 const ITEM = {
   type: "object",
   properties: {
-    kind: { type: "string", enum: ["claim", "value", "opinion", "forecast", "not_a_claim"] },
+    kind: { type: "string", enum: KINDS },
+    ...LAYER_FIELDS,
+    stance: { type: "string", enum: ["asserts", "denies", "none"], description: "Meaning layer: does the sentence assert or deny it" },
+    views: { type: "array", items: VIEW, description: "Meaning layer: each side's position; empty otherwise" },
+    pattern: { type: "array", items: PATTERN_ENTRY, description: "Intent layer: dated actions on record; empty otherwise" },
     text: { type: "string", description: "Precise neutral rewording of the claim or statement" },
     tier: { type: ["integer", "null"], description: "1-4 for claims, null otherwise" },
     reason: { type: "string" },
@@ -112,7 +155,10 @@ const ITEM = {
     exhibits: { type: "array", items: EXHIBIT },
     quote: { type: "string", description: "Exact continuous words from the sentence this item comes from" },
   },
-  required: ["kind", "text", "quote", "tier", "reason", "scope", "as_of", "resolve_by", "exhibits"],
+  required: [
+    "kind", "text", "quote", "tier", "reason", "scope", "as_of", "resolve_by", "exhibits",
+    "layer", "label", "charged", "stance", "views", "pattern",
+  ],
   additionalProperties: false,
 };
 
@@ -253,12 +299,13 @@ export const TRIAGE_SCHEMA = {
             items: {
               type: "object",
               properties: {
-                kind: { type: "string", enum: ["claim", "value", "opinion", "forecast", "not_a_claim"] },
+                kind: { type: "string", enum: KINDS },
                 text: { type: "string" },
                 resolve_by: { type: ["string", "null"] },
                 quote: { type: "string", description: "Exact continuous words from the sentence this item comes from" },
+                ...LAYER_FIELDS,
               },
-              required: ["kind", "text", "quote", "resolve_by"],
+              required: ["kind", "text", "quote", "resolve_by", "layer", "label", "charged"],
               additionalProperties: false,
             },
           },

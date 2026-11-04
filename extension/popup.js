@@ -10,6 +10,7 @@ const LABELS = {
   value: "Value",
   opinion: "Opinion",
   forecast: "Forecast ⏱",
+  intent: "Intent",
   not_a_claim: "Not a claim",
   queued: "Queued",
 };
