@@ -26,6 +26,8 @@
   --tv-unchecked: #b8bcc4;
   /* The tapped part's words light up briefly when its card opens. */
   --tv-flash-bg: rgba(255, 213, 79, 0.5);
+  /* Hovering a chip lightly highlights the words it labels. */
+  --tv-chip-words-bg: rgba(107, 122, 153, 0.18);
 
   /* Chips for non-facts (X-ray only). */
   --tv-chip-bg: #eef0f4;
@@ -53,6 +55,7 @@
   --tv-tier4-bg: rgba(255, 92, 87, 0.28);
   --tv-unchecked: #7d838d;
   --tv-flash-bg: rgba(255, 213, 79, 0.32);
+  --tv-chip-words-bg: rgba(159, 176, 208, 0.22);
   --tv-chip-bg: #2a2e36;
   --tv-chip-text: #d6dae1;
   --tv-chip-border: #464c57;
@@ -144,6 +147,10 @@
 
 ::highlight(tv-flash) {
   background-color: var(--tv-flash-bg);
+}
+
+::highlight(tv-chip-words) {
+  background-color: var(--tv-chip-words-bg);
 }
 
 /* Marks can't show a pointer themselves, so the page gets one while hovering a mark. */

@@ -81,7 +81,7 @@
     status: "idle",
     xray: false,
     marks: [], // { range, category, result, item }
-    chips: [], // { element, result, item }
+    chips: [], // { element, result, items } (one chip per sentence, listing its non-fact parts)
     ranges: new Map(), // item → the range of its words, for the flash when its card opens
     images: [], // { element, badge, results }
     darkAreas: [], // elements tagged .tv-on-dark
@@ -221,6 +221,7 @@
       CSS.highlights.delete(`tv-hover-${name}`);
     }
     CSS.highlights.delete("tv-flash");
+    CSS.highlights.delete("tv-chip-words");
     for (const chip of state.chips) chip.element.remove();
     for (const image of state.images) image.badge.remove();
     for (const element of state.darkAreas) element.classList.remove("tv-on-dark");
@@ -274,24 +275,39 @@
       if (nonFacts.length) placed.push({ range: sentenceRange, nonFacts, result });
     }
 
-    // Chips go at the end of the sentence, one per non-fact part, in sentence order.
+    // One chip at the end of each sentence, listing its non-fact parts by type with a count
+    // ("Opinion ·2 · Forecast"), so a sentence full of opinions isn't buried in chips.
     // Ranges are live, so the marks found above stay correct as chips are inserted.
     for (const { range, nonFacts, result } of placed) {
       const end = range.cloneRange();
       end.collapse(false);
-      for (const item of [...nonFacts].reverse()) {
-        const chip = el("span", "tv-chip", NON_FACTS[item.kind].name);
-        chip.dataset.tvChip = "true";
-        chip.title = item.text;
-        end.insertNode(chip);
-        state.chips.push({ element: chip, result, item });
-      }
+      const chip = el("span", "tv-chip", chipLabel(nonFacts));
+      chip.dataset.tvChip = "true";
+      chip.title = nonFacts.map((i) => i.text).join("\n");
+      end.insertNode(chip);
+      const entry = { element: chip, result, items: nonFacts };
+      // Hovering lights up the chip's own words in place.
+      chip.addEventListener("mouseenter", () => showChipWords(entry));
+      chip.addEventListener("mouseleave", () => CSS.highlights.delete("tv-chip-words"));
+      state.chips.push(entry);
     }
 
     for (const [url, results] of byImage) placeImageBadge(url, results);
     markDarkAreas();
     applyHighlights();
     renderLegend();
+  }
+
+  // "Opinion ·2 · Forecast": each type once, in the order it first appears, with its count.
+  function chipLabel(items) {
+    const counts = new Map();
+    for (const item of items) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
+    return [...counts].map(([kind, n]) => n > 1 ? `${NON_FACTS[kind].name} ·${n}` : NON_FACTS[kind].name).join(" · ");
+  }
+
+  function showChipWords(chip) {
+    const ranges = chip.items.map((i) => state.ranges.get(i)).filter(Boolean);
+    if (ranges.length) CSS.highlights.set("tv-chip-words", new Highlight(...ranges));
   }
 
   // Marks need brighter colors on dark backgrounds. Light-colored text means a dark
@@ -449,7 +465,7 @@
       panel.append(row);
     }
     const chipRow = el("div", "tv-legend-row");
-    chipRow.append(el("span", "tv-swatch", "Chips"), el("span", "", "Value · Opinion · Forecast ⏱ (X-ray). Not graded."));
+    chipRow.append(el("span", "tv-swatch", "Chips"), el("span", "", "Value · Opinion ·2 · Forecast ⏱ (X-ray): one per sentence, with a count. Not graded."));
     panel.append(chipRow);
     panel.append(el("p", "tv-legend-note",
       "Underlines are facts; chips are non-facts. Every label is an AI draft until reviewed. Tap a mark for the evidence."));
@@ -536,9 +552,13 @@
   let flashTimer = 0;
 
   function flash(item) {
-    const range = state.ranges.get(item);
-    if (!range) return;
-    CSS.highlights.set("tv-flash", new Highlight(range));
+    flashAll([item]);
+  }
+
+  function flashAll(items) {
+    const ranges = items.map((i) => state.ranges.get(i)).filter(Boolean);
+    if (!ranges.length) return;
+    CSS.highlights.set("tv-flash", new Highlight(...ranges));
     clearTimeout(flashTimer);
     flashTimer = setTimeout(() => CSS.highlights.delete("tv-flash"), FLASH_MS);
   }
@@ -987,7 +1007,10 @@
       event.preventDefault();
       event.stopPropagation();
       const found = state.chips.find((c) => c.element === chip);
-      if (found) openCard([found.result], chip.getBoundingClientRect(), undefined, found.item);
+      if (found) {
+        openCard([found.result], chip.getBoundingClientRect(), undefined, found.items[0], { flash: false });
+        flashAll(found.items);
+      }
       return;
     }
     // Links keep working: marks inside a link open only with Alt held.
