@@ -52,6 +52,14 @@ type Kind = "claim" | "value" | "opinion" | "forecast" | "intent" | "not_a_claim
 type Layer = "form" | "meaning" | "intent";
 type View = { position: string; held_by: string; size: string; url: string | null };
 type PatternEntry = { date: string | null; action: string; url: string | null };
+type BaseRate = {
+  applies?: boolean;
+  examples_shown: number | null;
+  implies: string | null;
+  rate: string | null;
+  scope: string | null;
+  url: string | null;
+};
 
 export type Item = {
   kind: Kind;
@@ -79,6 +87,8 @@ export type Item = {
   flavor?: "contested" | null;
   views?: View[];
   pattern?: PatternEntry[];
+  // Examples presented as a trend: how many were shown and how often it really happens.
+  base_rate?: BaseRate | null;
 };
 
 // Claude answers "none" where a layer field doesn't apply; stored items use null.
@@ -95,14 +105,16 @@ function tidyLayers<T extends Partial<Item>>(item: T): T {
     flavor: contested ? "contested" : null,
     views: layer === "meaning" || contested ? item.views ?? [] : [],
     pattern: layer === "intent" ? item.pattern ?? [] : [],
+    base_rate: item.base_rate?.applies ? { ...item.base_rate, applies: undefined } : null,
   };
 }
 
 // The layer fields stored with a block or non-fact statement.
 function layerColumns(item: Item) {
-  const context = item.layer === "meaning" || item.flavor ? { views: item.views ?? [] }
+  let context: Record<string, unknown> | null = item.layer === "meaning" || item.flavor ? { views: item.views ?? [] }
     : item.layer === "intent" ? { pattern: item.pattern ?? [] }
     : null;
+  if (item.base_rate) context = { ...context, base_rate: item.base_rate };
   return { layer: item.layer ?? null, label: item.label ?? null, charged: item.charged ?? null, context };
 }
 
@@ -560,9 +572,10 @@ async function layersOf(supabase: SupabaseClient, ids: string[]) {
   if (!ids.length) return found;
   const { data } = await supabase.from("blocks").select("id, layer, label, charged, context, flavor").in("id", ids);
   for (const row of data ?? []) {
-    if (!row.layer && !row.charged && !row.flavor) continue;
+    if (!row.layer && !row.charged && !row.flavor && !row.context?.base_rate) continue;
     found.set(row.id, {
       layer: row.layer, label: row.label, charged: row.charged, flavor: row.flavor,
+      base_rate: row.context?.base_rate ?? null,
       views: row.context?.views ?? [], pattern: row.context?.pattern ?? [],
     });
   }
@@ -571,8 +584,11 @@ async function layersOf(supabase: SupabaseClient, ids: string[]) {
 
 async function nonFactLayers(supabase: SupabaseClient, id: string): Promise<Partial<Item>> {
   const { data } = await supabase.from("non_fact_tags").select("layer, label, charged, context").eq("id", id).single();
-  if (!data?.layer && !data?.charged) return {};
-  return { layer: data.layer, label: data.label, charged: data.charged, pattern: data.context?.pattern ?? [] };
+  if (!data?.layer && !data?.charged && !data?.context?.base_rate) return {};
+  return {
+    layer: data.layer, label: data.label, charged: data.charged,
+    pattern: data.context?.pattern ?? [], base_rate: data.context?.base_rate ?? null,
+  };
 }
 
 function nonFactItem(kind: Kind, text: string, resolveBy: string | null): Item {

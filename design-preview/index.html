@@ -66,6 +66,12 @@
       <p>Whole milk is better for your heart than skim, a new study says.</p>
     </div>
 
+    <div class="thread">
+      <h2>Examples presented as a trend (base rate)</h2>
+      <p>Another electric bus fire in Northvale, the third this year.</p>
+      <div class="comment"><b>reply · no base rate found</b>Every week there's another story about a scooter rider getting hurt downtown.</div>
+    </div>
+
     <div class="thread dark">
       <h2>Dark-mode comment (one sentence, three labels)</h2>
       <div class="comment">Yeah the mayor loved calling the governor 'Robert J. SMITH'</div>
@@ -177,7 +183,7 @@
       } },
     };
 
-    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3, i: 3, j: 1, k: 2, l: 1, m: 1, n: 2, o: 2 };
+    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3, i: 3, j: 1, k: 2, l: 1, m: 1, n: 2, o: 2, q: 1, r: 3 };
     const ORIGINAL_TIERS = { ...SAMPLE_TIERS };
     const claim = (id, text, tier, reason, exhibits = [], extra = {}) =>
       ({ kind: "claim", text, tier, reason, scope: null, as_of: null, resolve_by: null, exhibits, block_id: id, ...extra });
@@ -287,6 +293,18 @@
           { flavor: "contested", views: [
             { position: "Whole-milk drinkers had 9% fewer heart events over 12 years.", held_by: "The 2026 Northvale cohort study (one study, 40,000 adults)", size: "1 large study, not yet replicated", url: "https://example.org/journals/whole-milk-2026" },
             { position: "Saturated dairy fat slightly raises LDL cholesterol; no heart benefit over skim.", held_by: "A 2024 review of 31 trials", size: "31 trials, pooled", url: "https://example.org/journals/dairy-fat-review-2024" } ] }) ] },
+      { sentence: "Another electric bus fire in Northvale, the third this year.", items: [
+        claim("q", "Three Northvale electric buses caught fire in 2026.", 1,
+          "The transit agency's incident log lists three fires, in March, July and October.",
+          [exhibit("https://example.org/northvale/transit/incidents-2026", "primary", "Incident log, 2026")],
+          { quote: "the third this year", as_of: "2026-10-31",
+            base_rate: { examples_shown: 3, implies: "Electric buses catch fire more often than other buses.",
+              rate: "3 fires in 2.1 million electric-bus miles; the diesel fleet had 11 fires in 6.4 million miles, about the same rate per mile.",
+              scope: "Northvale transit fleet, Jan to Oct 2026", url: "https://example.org/northvale/transit/incidents-2026" } }) ] },
+      { sentence: "Every week there's another story about a scooter rider getting hurt downtown.", items: [
+        claim("r", "News outlets report a scooter injury in downtown Northvale about once a week.", 3,
+          "No count of such reports was found, and no injury figures for downtown scooters were published.", [],
+          { base_rate: { examples_shown: null, implies: "Scooter injuries downtown are frequent.", rate: null, scope: null, url: null } }) ] },
       { sentence: "Only a moron would vote for the levy.", items: [
         nonFact("opinion", "People who vote for the levy are making a poor judgment.", { quote: "Only a moron would vote for the levy", charged: "moron" }) ] },
       { sentence: "Yeah the mayor loved calling the governor 'Robert J. SMITH'", items: [

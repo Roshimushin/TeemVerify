@@ -658,6 +658,7 @@
       view.append(head, el("p", "tv-claim", item.text), el("p", "tv-meaning", info.meaning));
       if (item.kind === "forecast") view.append(evidenceClock(item));
       if (item.kind === "intent") view.append(patternView(item.pattern ?? []));
+      if (item.base_rate) view.append(baseRateView(item.base_rate));
       if (showCharged(item)) view.append(chargedView(item));
       if (item.kind === "value") {
         const section = el("div", "tv-section");
@@ -678,6 +679,7 @@
     if (item.reason) view.append(el("p", "tv-reason", item.reason));
     if (item.layer === "meaning" || contested) view.append(viewsView(item.views ?? [], contested ? "Each side, and how large it is" : undefined));
     if (item.layer === "intent") view.append(patternView(item.pattern ?? []));
+    if (item.base_rate) view.append(baseRateView(item.base_rate));
     if (showCharged(item)) view.append(chargedView(item));
     if (item.scope || item.as_of) {
       const scope = [item.scope, item.as_of && `as of ${formatDate(item.as_of)}`].filter(Boolean).join(", ");
@@ -978,6 +980,27 @@
       list.append(li);
     }
     section.append(list);
+    return section;
+  }
+
+  // Examples presented as a trend: "N examples shown. How often this happens: [base rate]"
+  // or "No base rate presented." Same rule for any side.
+  function baseRateView(base) {
+    const section = el("div", "tv-section");
+    section.append(el("h3", "", "Base rate"));
+    const n = base.examples_shown;
+    const shown = n == null ? "Examples shown" : `${n} example${n === 1 ? "" : "s"} shown`;
+    if (base.implies) section.append(el("p", "tv-meaning", `Presented as showing: ${base.implies}`));
+    const line = el("p", "", base.rate ? `${shown}. How often this happens: ${base.rate}` : `${shown}. No base rate presented.`);
+    if (base.rate && base.scope) line.append(el("span", "tv-source-type", ` (${base.scope})`));
+    if (base.rate && base.url) {
+      const link = el("a", "", hostOf(base.url));
+      link.href = base.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      line.append(" · ", link);
+    }
+    section.append(line);
     return section;
   }
 

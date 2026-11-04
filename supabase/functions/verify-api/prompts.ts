@@ -52,6 +52,7 @@ Contested (a flavor of Tier 2, never a fifth tier): set "flavor": "contested" on
 - Exhibits are sources of evidence: primary records, data, official documents, original reporting. Encyclopedias (Wikipedia, Britannica and similar) are maps to primary sources, never exhibits: do not list them, follow their citations to the primary source instead. Fact-checkers' verdicts are Tier 2 conclusions; the evidence they cite can be an exhibit.
 - Same standard for every side, party and person. Label the claim, never the speaker.
 - Charged words are not claims. Reword each claim in its most precise neutral form: name the actor when known, keep the accurate term even when ugly, strip hyperbole and insults.
+- Base rates (one example, or a supercut, presented as a trend): when a sentence implies something is common, rising or typical ("another one", "this keeps happening", "third this month", a list of cases), fill "base_rate" on the item that carries it: applies true, how many examples the content shows (null if it doesn't count them), what it implies is common, and how often it really happens, with scope and a source, if you find a base rate. Compare like with like (per mile, per capita, versus the alternative). If you find none, rate is null. Same rule for every side and topic. Otherwise applies false and the rest null.
 - Claims about an exhibit: when the request lists exhibits shown on the page (an email, document or screenshot), a sentence describing one is graded against what the exhibit actually shows, as well as against the world. Say so in the reason when it goes beyond the exhibit (a request to visit is not a visit; a meeting invitation is not a meeting). The exhibit's own words are quoted speech, not claims made by the page.
 
 ${CROSS_REFERENCE_RULES}
@@ -139,9 +140,25 @@ const PATTERN_ENTRY = {
   additionalProperties: false,
 };
 
+// Representativeness: examples presented as a trend get the real base rate beside them.
+const BASE_RATE = {
+  type: "object",
+  properties: {
+    applies: { type: "boolean", description: "The sentence implies something is common or rising from examples" },
+    examples_shown: { type: ["integer", "null"], description: "How many examples the content shows, if it counts them" },
+    implies: { type: ["string", "null"], description: "What the examples are presented as showing is common" },
+    rate: { type: ["string", "null"], description: "How often it really happens, compared like with like; null if none found" },
+    scope: { type: ["string", "null"], description: "Place and period the rate covers" },
+    url: { type: ["string", "null"] },
+  },
+  required: ["applies", "examples_shown", "implies", "rate", "scope", "url"],
+  additionalProperties: false,
+};
+
 const ITEM = {
   type: "object",
   properties: {
+    base_rate: BASE_RATE,
     kind: { type: "string", enum: KINDS },
     ...LAYER_FIELDS,
     stance: { type: "string", enum: ["asserts", "denies", "none"], description: "Meaning layer: does the sentence assert or deny it" },
@@ -159,7 +176,7 @@ const ITEM = {
   },
   required: [
     "kind", "text", "quote", "tier", "reason", "scope", "as_of", "resolve_by", "exhibits",
-    "layer", "label", "charged", "stance", "flavor", "views", "pattern",
+    "layer", "label", "charged", "stance", "flavor", "views", "pattern", "base_rate",
   ],
   additionalProperties: false,
 };

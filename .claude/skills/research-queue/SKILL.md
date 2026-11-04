@@ -52,6 +52,10 @@ spend Anthropic API money. Never call the `check` action from here; that one cos
    called, usually Tier 2, with `views` and a `stance` of asserts or denies) and `intent` (kind
    `intent`, untiered, with a dated `pattern`, unless self-documented). Charged terms go in
    `charged`, on the meaning layer when split. See the layer rules in `CLASSIFY_RULES`.
+   Examples presented as a trend ("another one", "third this month") get a `base_rate`: how many
+   examples are shown and how often it really happens, like with like, with a source (rate null
+   if none found). A Tier 2 claim whose sides each rest on live Tier 1 evidence gets `flavor`
+   `contested`, with each side in `views`.
    Claims you can't settle are Tier 3, with a reason that says what was and wasn't found.
    If a sentence can't be researched at all (e.g. it needs context the sentence lacks), you may
    still grade it Tier 3 with "No evidence presented" and say what's missing.
