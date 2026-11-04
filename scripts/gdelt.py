@@ -65,10 +65,10 @@ def fetch_window(country, start, end):
             break
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
             # GDELT refuses ("too many requests") or stalls when busy: wait longer each time,
-            # then give up on this slice of the day and go on with the others.
+            # then stop: when GDELT is busy, the other slices of the day get refused too.
             if attempt == 3:
-                print(f"GDELT busy, skipped {start:%H:%M}-{end:%H:%M} UTC: {error}", file=sys.stderr)
-                return []
+                print(f"GDELT busy at {start:%H:%M}-{end:%H:%M} UTC ({error}); try again later.", file=sys.stderr)
+                return None
             time.sleep(30 * (attempt + 1))
     try:
         return json.loads(body).get("articles", [])
@@ -139,7 +139,10 @@ def main():
         if i:
             time.sleep(WAIT_SECONDS)
         window_end = end - span * i
-        for article in fetch_window(args.country, window_end - span, window_end):
+        fetched = fetch_window(args.country, window_end - span, window_end)
+        if fetched is None:
+            break
+        for article in fetched:
             title = clean_title(article.get("title", ""))
             if article.get("url") in seen_urls or not usable(title):
                 continue
