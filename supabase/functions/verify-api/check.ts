@@ -293,14 +293,22 @@ async function exhibitsShown(supabase: SupabaseClient, images: string[] | undefi
 
 // ---------- the research queue (worked by Claude Code) ----------
 
-export async function queueNext(supabase: SupabaseClient, { limit = 10 }: { limit?: number }) {
-  const { data, error } = await supabase
+export async function queueNext(
+  supabase: SupabaseClient,
+  { limit = 10, stream }: { limit?: number; stream?: "becket_pick" | "page" | "fact_checker_seed" | "trending" },
+) {
+  // A /research-batch run mixes streams: it can ask for one at a time.
+  let query = supabase
     .from("claim_queue")
     .select(
       "id, sentence_text, page_url, seen_count, queued_at, picked_at, stream, image_url, " +
-        "seed: seed_reviews(outlet, review_url, review_date, rating, rating_explanation, claimant, claim_date, appearance_url, block_id)",
+      "source, reach, " +
+      "seed: seed_reviews(outlet, review_url, review_date, rating, rating_explanation, claimant, claim_date, appearance_url, block_id)",
     )
-    .eq("status", "queued")
+    .eq("status", "queued");
+  if (stream === "becket_pick") query = query.not("picked_at", "is", null);
+  else if (stream) query = query.eq("stream", stream).is("picked_at", null);
+  const { data, error } = await query
     // Becket's picks first, in the order picked; then the most-seen claims; then fact-checker
     // seeds, which are interleaved across outlets by priority.
     .order("picked_at", { ascending: true, nullsFirst: false })
@@ -327,7 +335,7 @@ export async function submitResults(
   supabase: SupabaseClient,
   embed: Embed,
   // deno-lint-ignore no-explicit-any
-  { results }: { results: { queue_id: string; items?: Item[]; exhibit?: any; failed_note?: string }[] },
+  { results }: { results: { queue_id: string; items?: Item[]; exhibit?: any; failed_note?: string; skipped_note?: string }[] },
 ) {
   if (!Array.isArray(results)) throw new Error("submit_results needs results");
   const saved: { queue_id: string; ok: boolean; error?: string }[] = [];
@@ -339,7 +347,12 @@ export async function submitResults(
         .eq("id", result.queue_id)
         .single();
       if (error) throw error;
-      if (result.failed_note) {
+      if (result.skipped_note) {
+        // Already in the library (say which claim): not researched again.
+        await supabase.from("claim_queue")
+          .update({ status: "skipped", done_at: new Date().toISOString(), note: result.skipped_note })
+          .eq("id", result.queue_id);
+      } else if (result.failed_note) {
         await supabase.from("claim_queue")
           .update({ status: "failed", done_at: new Date().toISOString(), note: result.failed_note })
           .eq("id", result.queue_id);

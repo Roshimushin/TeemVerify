@@ -9,8 +9,12 @@
 //   lookup         { url, sentences, daily_cap_usd } -> cheap labelling of up to 20 sentences;
 //                                                     claims go to the research queue (see check.ts)
 //   check          { url, sentences, daily_cap_usd } -> researches up to 6 sentences now
-//   queue_next     { limit? }                   -> claims waiting for research, most-seen first
+//   queue_next     { limit?, stream? }          -> claims waiting for research, most-seen first
 //   submit_results { results }                  -> research findings from Claude Code
+//   queue_add      { entries }                  -> candidate claims from a fetcher (GDELT, ...), skipping
+//                                                     ones already in the library (see batch.ts)
+//   batch_stats    { since }                    -> what research produced since then (batch report)
+//   batch_log      { started_at, block_target?, notion_url?, note? } -> logs a finished batch run
 //   read_images    { images, daily_cap_usd }    -> text found in up to 4 post images (see images.ts)
 //   block_detail   { block_id }                 -> a stored claim with its exhibits and tier history
 //   confirm        { block_id }                 -> Becket marks a claim reviewed (see feedback.ts)
@@ -28,6 +32,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { blockDetail, checkSentences, linkBlocks, lookupSentences, queueNext, spentToday, submitResults } from "./check.ts";
 import { checkExhibit, queueExhibit } from "./exhibits.ts";
+import { batchLog, batchStats, queueAdd } from "./batch.ts";
 import { challengeBlock, confirmBlock, prioritize, rewordBlock } from "./feedback.ts";
 import { readImages } from "./images.ts";
 import { addSayDo } from "./saydo.ts";
@@ -49,7 +54,7 @@ const corsHeaders = {
 function reply(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
   });
 }
 
@@ -105,6 +110,7 @@ const EXPORT_TABLES = [
   "seed_reviews",
   "block_links",
   "say_do_pairs",
+  "research_batches",
 ];
 const PAGE_SIZE = 1000;
 
@@ -173,6 +179,12 @@ Deno.serve(async (req) => {
         return reply(await queueExhibit(supabase, body));
       case "link_blocks":
         return reply(await linkBlocks(supabase, body));
+      case "queue_add":
+        return reply(await queueAdd(supabase, embed, body));
+      case "batch_stats":
+        return reply(await batchStats(supabase, body));
+      case "batch_log":
+        return reply(await batchLog(supabase, body));
       case "add_say_do":
         return reply(await addSayDo(supabase, body));
       case "spend":

@@ -26,6 +26,11 @@ spend Anthropic API money. Never call the `check` action from here; that one cos
    claim is updated rather than copied, and keep the fact-check among its exhibits
    (source_type `fact_checker`). Any further atomic claims are new items without a block_id.
    The claim text is the outlet's summary, so the `quote` can be null.
+   Entries with `stream: "trending"` are today's news headlines from a fetcher (`source`: gdelt
+   for now). `reach` says how many outlets carried the story (news coverage only, not social
+   reach). A headline is a candidate: research the claims it makes, open the article and its
+   sources, and give every atomic block the reporting supports. If it isn't checkable, or a stored
+   claim already says the same, submit `{"queue_id": "<id>", "skipped_note": "<why, block id>"}`.
    Entries with `image_url` set are **exhibits** (an email, document or screenshot, picked
    with "Research this" on its card). Grade only provenance, following `EXHIBIT_SYSTEM` in
    `prompts.ts`: is it real, unaltered and correctly attributed? Never grade what it says;
