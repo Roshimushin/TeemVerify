@@ -63,11 +63,13 @@ def fetch_window(country, start, end):
             with urllib.request.urlopen(request, timeout=60) as response:
                 body = response.read().decode("utf-8", errors="replace")
             break
-        except urllib.error.HTTPError as error:
-            # Too many requests: wait longer each time.
-            if error.code != 429 or attempt == 3:
-                raise
-            time.sleep(WAIT_SECONDS * (attempt + 2))
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
+            # GDELT refuses ("too many requests") or stalls when busy: wait longer each time,
+            # then give up on this slice of the day and go on with the others.
+            if attempt == 3:
+                print(f"GDELT busy, skipped {start:%H:%M}-{end:%H:%M} UTC: {error}", file=sys.stderr)
+                return []
+            time.sleep(30 * (attempt + 1))
     try:
         return json.loads(body).get("articles", [])
     except json.JSONDecodeError:
@@ -93,6 +95,8 @@ def words(title):
 def usable(title):
     lowered = title.lower()
     if len(title.split()) < 6 or title.endswith("?"):
+        return False
+    if lowered.startswith("live") or "live scores" in lowered:
         return False
     return not any(s in lowered for s in ("live updates", "live:", "quiz", "horoscope", "crossword", "recipe"))
 
