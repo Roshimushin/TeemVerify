@@ -31,8 +31,13 @@ exhibits support (dates, figures, votes, quotes), not only the block the sentenc
       (today's news) and `fact_checker_seed`, so no one stream fills the batch.
    Research every entry exactly as the `research-queue` skill says (read it first: it holds the
    grading steps, layers, base rates, contested claims, say-do and the exhibit rules), and
-   follow the Fact Library Rules for every tier. Submit every 3–5 entries with
-   `powershell -NoProfile -File scripts/queue.ps1 submit -File <path>` so work isn't lost.
+   follow the Fact Library Rules for every tier. Submit each entry as soon as it's done, one
+   entry per file, with `powershell -NoProfile -File scripts/queue.ps1 submit -File <path>`.
+   Every block is embedded on the server, and more than about 8 blocks in one request can hit
+   its compute limit (`WORKER_RESOURCE_LIMIT`). If that happens, the blocks saved before the limit
+   stay saved but the entry stays queued: look them up (`stats` lists none of the Tier 1s, so query
+   `tier_history` for actor `claude_code` since the start), add their `block_id`s to those items,
+   and resubmit the entry, so nothing is saved twice.
 4. **Skip duplicates.** Before researching, check the library:
    `powershell -NoProfile -File scripts/queue.ps1 match -Text "<claim>"`. If a stored claim says
    the same thing, submit `{"queue_id": "<id>", "skipped_note": "Already in the library: <block id>"}`
