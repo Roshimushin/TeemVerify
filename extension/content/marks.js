@@ -32,6 +32,9 @@
   const LAYER_ORDER = ["form", "meaning", "intent"];
   const CHARGED = "Charged term";
   const CHARGED_MEANING = "That the words were used is a fact. What they mean here depends on the context, and is graded on it. What the speaker intended isn't graded.";
+  const CONTESTED = "Contested";
+  const CONTESTED_MEANING = "Each side's conclusion rests on its own verified evidence; the dispute is about how much, or what it means. Shown with how large each side really is.";
+  const COI_MEANING = "Shown as context. It's a reason to check the study's methods closely; it doesn't refute it or lower its tier.";
   const DENIED = "This sentence denies it. The card is the same either way: each side's view is shown with how large it really is.";
   const UNCHECKED = {
     name: "Not checked yet",
@@ -666,13 +669,14 @@
     }
 
     const tier = TIERS[item.tier];
-    head.append(el("span", `tv-tier t${item.tier}`, tier.name), el("span", "tv-badge", "AI draft"));
+    const contested = item.flavor === "contested" && item.tier === 2;
+    head.append(el("span", `tv-tier t${item.tier}`, contested ? `${tier.name} · ${CONTESTED}` : tier.name), el("span", "tv-badge", "AI draft"));
     view.append(head);
     if (noticeView) view.append(noticeView);
-    view.append(el("p", "tv-claim", item.text), el("p", "tv-meaning", tier.meaning));
+    view.append(el("p", "tv-claim", item.text), el("p", "tv-meaning", contested ? CONTESTED_MEANING : tier.meaning));
     if (item.stance === "denies") view.append(el("p", "tv-notice", DENIED));
     if (item.reason) view.append(el("p", "tv-reason", item.reason));
-    if (item.layer === "meaning") view.append(viewsView(item.views ?? []));
+    if (item.layer === "meaning" || contested) view.append(viewsView(item.views ?? [], contested ? "Each side, and how large it is" : undefined));
     if (item.layer === "intent") view.append(patternView(item.pattern ?? []));
     if (showCharged(item)) view.append(chargedView(item));
     if (item.scope || item.as_of) {
@@ -925,9 +929,9 @@
   }
 
   // Meaning layer: each side's position, who holds it, and how large that side really is.
-  function viewsView(views) {
+  function viewsView(views, title = "Views, and how large each side is") {
     const section = el("div", "tv-section");
-    section.append(el("h3", "", "Views, and how large each side is"));
+    section.append(el("h3", "", title));
     if (!views.length) {
       section.append(el("p", "tv-meaning", "No expert views found yet."));
       return section;
@@ -1034,7 +1038,18 @@
       section.append(el("p", "tv-meaning", "Couldn't load the history."));
       return;
     }
-    const { block, history, challenges = [], wording = [], sightings } = reply.data;
+    const { block, history, challenges = [], wording = [], sightings, context = [] } = reply.data;
+    const coi = context.filter((c) => c.relation === "coi" && c.context);
+    if (coi.length) {
+      const box = el("div", "tv-section");
+      box.append(el("h3", "", "Conflict of interest"));
+      const items = el("ul");
+      for (const link of coi) {
+        items.append(el("li", "", `${link.context.claim_text} (Tier ${link.context.tier})${link.note ? ` · ${link.note}` : ""}`));
+      }
+      box.append(items, el("p", "tv-meaning", COI_MEANING));
+      section.before(box);
+    }
     if (block.status === "reviewed") {
       view.querySelector(".tv-card-head .tv-badge")?.replaceWith(el("span", "tv-badge", "Reviewed"));
       view.querySelector(".tv-confirm")?.remove();

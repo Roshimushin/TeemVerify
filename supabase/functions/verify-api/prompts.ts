@@ -39,6 +39,7 @@ ${CLASSIFY_RULES}
 - Tier 3, unverified: not established either way. The default when evidence is thin, missing or conflicting.
 - Tier 4, refuted: only with affirmative proof of falsity, by one of two routes: (a) contradiction: it contradicts an established Tier 1 fact; (b) expected-evidence test: if it were true, evidence would have to exist, and a documented search by people able to find it (officials, records) found none.
 Symmetric high bar: Tier 1 needs proof of truth, Tier 4 needs proof of falsity. "No evidence it's true" is Tier 3, not Tier 4.
+Contested (a flavor of Tier 2, never a fifth tier): set "flavor": "contested" only when each side has a good-faith conclusion resting on its own live Tier 1 evidence and the dispute is about magnitude or interpretation. Give each side as a "views" entry with the url of its strongest exhibit and how large that side really is. Headcount or loudness never qualifies; a side whose evidence was retracted or refuted isn't a side. Thin evidence on both sides is Tier 3, not contested. Many contests dissolve once scope is stated (short vs. long term, small vs. large change): split by scope first. Who funded a study is context, never a refutation. Otherwise "flavor": "none".
 
 ## 3. Rules that always apply
 - The burden is on the claimant. Nobody has to prove a negative. An accusation with no evidence is Tier 3 with the reason "No evidence presented." Insinuations framed as questions ("just asking") are treated the same.
@@ -144,7 +145,8 @@ const ITEM = {
     kind: { type: "string", enum: KINDS },
     ...LAYER_FIELDS,
     stance: { type: "string", enum: ["asserts", "denies", "none"], description: "Meaning layer: does the sentence assert or deny it" },
-    views: { type: "array", items: VIEW, description: "Meaning layer: each side's position; empty otherwise" },
+    flavor: { type: "string", enum: ["contested", "none"], description: "Tier 2 only: contested, when each side rests on live Tier 1 evidence" },
+    views: { type: "array", items: VIEW, description: "Meaning layer or contested claim: each side's position; empty otherwise" },
     pattern: { type: "array", items: PATTERN_ENTRY, description: "Intent layer: dated actions on record; empty otherwise" },
     text: { type: "string", description: "Precise neutral rewording of the claim or statement" },
     tier: { type: ["integer", "null"], description: "1-4 for claims, null otherwise" },
@@ -157,7 +159,7 @@ const ITEM = {
   },
   required: [
     "kind", "text", "quote", "tier", "reason", "scope", "as_of", "resolve_by", "exhibits",
-    "layer", "label", "charged", "stance", "views", "pattern",
+    "layer", "label", "charged", "stance", "flavor", "views", "pattern",
   ],
   additionalProperties: false,
 };

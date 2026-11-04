@@ -19,10 +19,12 @@
 //   prioritize     { sentence, url? }           -> "Research this": front of the research queue
 //   check_exhibit  { image_url, url, context?, daily_cap_usd } -> an exhibit's provenance, checked now
 //   queue_exhibit  { image_url, url }           -> an exhibit to the front of the research queue
+//   link_blocks    { from_block_id, to_block_id, relation?, note? } -> shows one block as context
+//                                                     on another (relation "coi": who funded a study)
 //   spend          {}                           -> what Claude calls have cost so far today (UTC)
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { blockDetail, checkSentences, lookupSentences, queueNext, spentToday, submitResults } from "./check.ts";
+import { blockDetail, checkSentences, linkBlocks, lookupSentences, queueNext, spentToday, submitResults } from "./check.ts";
 import { checkExhibit, queueExhibit } from "./exhibits.ts";
 import { challengeBlock, confirmBlock, prioritize, rewordBlock } from "./feedback.ts";
 import { readImages } from "./images.ts";
@@ -98,6 +100,8 @@ const EXPORT_TABLES = [
   "image_memory",
   "wording_history",
   "seed_reviews",
+  "block_links",
+  "say_do_pairs",
 ];
 const PAGE_SIZE = 1000;
 
@@ -164,6 +168,8 @@ Deno.serve(async (req) => {
         return reply(await checkExhibit(supabase, embed, body));
       case "queue_exhibit":
         return reply(await queueExhibit(supabase, body));
+      case "link_blocks":
+        return reply(await linkBlocks(supabase, body));
       case "spend":
         return reply({ spent_today_usd: await spentToday(supabase) });
       default:

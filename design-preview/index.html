@@ -61,6 +61,11 @@
       <div class="comment"><b>reply · the same word as an insult</b>Only a moron would vote for the levy.</div>
     </div>
 
+    <div class="thread">
+      <h2>Contested claim, with a funding conflict shown as context</h2>
+      <p>Whole milk is better for your heart than skim, a new study says.</p>
+    </div>
+
     <div class="thread dark">
       <h2>Dark-mode comment (one sentence, three labels)</h2>
       <div class="comment">Yeah the mayor loved calling the governor 'Robert J. SMITH'</div>
@@ -131,6 +136,8 @@
               challenges: extra.filter((e) => e.challenge).map((e) => ({ ...e.challenge, created_at: e.created_at })),
               wording: extra.filter((e) => e.wording).map((e) => ({ ...e.wording, created_at: e.created_at })),
               sightings: 3,
+              context: id === "o" ? [{ relation: "coi", note: "Funder of the 2026 study",
+                context: { id: "p", claim_text: "The Northvale Dairy Council funded the 2026 Northvale whole-milk study.", tier: 1 } }] : [],
             } };
           }
           if (message.type === "feedback") return { ok: true, data: await simulateFeedback(message) };
@@ -170,7 +177,7 @@
       } },
     };
 
-    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3, i: 3, j: 1, k: 2, l: 1, m: 1, n: 2 };
+    const SAMPLE_TIERS = { a: 1, b: 4, c: 2, d: 1, e: 1, f: 3, g: 4, h: 3, i: 3, j: 1, k: 2, l: 1, m: 1, n: 2, o: 2 };
     const ORIGINAL_TIERS = { ...SAMPLE_TIERS };
     const claim = (id, text, tier, reason, exhibits = [], extra = {}) =>
       ({ kind: "claim", text, tier, reason, scope: null, as_of: null, resolve_by: null, exhibits, block_id: id, ...extra });
@@ -272,6 +279,14 @@
           [exhibit("https://example.org/northvale/archive/asylum-1912", "primary", "Definitions, p. 3")],
           { quote: "'morons'", layer: "meaning", label: "moron", charged: null, stance: "asserts",
             views: [{ position: "A clinical category of its time, defined by test scores.", held_by: "Historians of psychiatry", size: "Undisputed", url: null }] }) ] },
+      { sentence: "Whole milk is better for your heart than skim, a new study says.", items: [
+        claim("o", "Drinking whole milk instead of skim lowers heart-disease risk in adults.", 2,
+          "Two bodies of evidence point different ways; each rests on published studies.",
+          [exhibit("https://example.org/journals/whole-milk-2026", "primary", "2026 cohort study, Table 3"),
+           exhibit("https://example.org/journals/dairy-fat-review-2024", "primary", "2024 review of 31 trials")],
+          { flavor: "contested", views: [
+            { position: "Whole-milk drinkers had 9% fewer heart events over 12 years.", held_by: "The 2026 Northvale cohort study (one study, 40,000 adults)", size: "1 large study, not yet replicated", url: "https://example.org/journals/whole-milk-2026" },
+            { position: "Saturated dairy fat slightly raises LDL cholesterol; no heart benefit over skim.", held_by: "A 2024 review of 31 trials", size: "31 trials, pooled", url: "https://example.org/journals/dairy-fat-review-2024" } ] }) ] },
       { sentence: "Only a moron would vote for the levy.", items: [
         nonFact("opinion", "People who vote for the levy are making a poor judgment.", { quote: "Only a moron would vote for the levy", charged: "moron" }) ] },
       { sentence: "Yeah the mayor loved calling the governor 'Robert J. SMITH'", items: [

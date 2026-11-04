@@ -75,6 +75,8 @@ export type Item = {
   charged?: string | null;
   // Whether the sentence asserts or denies the meaning layer; the card is the same either way.
   stance?: "asserts" | "denies" | null;
+  // Contested is a flavor of Tier 2 (each side rests on its own Tier 1 evidence); views holds the sides.
+  flavor?: "contested" | null;
   views?: View[];
   pattern?: PatternEntry[];
 };
@@ -83,20 +85,22 @@ export type Item = {
 function tidyLayers<T extends Partial<Item>>(item: T): T {
   const none = (v: unknown) => (v === "none" || v === "" || v == null ? null : v);
   const layer = none(item.layer) as Layer | null;
+  const contested = item.tier === 2 && none(item.flavor) === "contested";
   return {
     ...item,
     layer,
     label: layer ? none(item.label) as string | null : null,
     charged: none(item.charged) as string | null,
     stance: layer === "meaning" ? (none(item.stance) as Item["stance"]) ?? "asserts" : null,
-    views: layer === "meaning" ? item.views ?? [] : [],
+    flavor: contested ? "contested" : null,
+    views: layer === "meaning" || contested ? item.views ?? [] : [],
     pattern: layer === "intent" ? item.pattern ?? [] : [],
   };
 }
 
 // The layer fields stored with a block or non-fact statement.
 function layerColumns(item: Item) {
-  const context = item.layer === "meaning" ? { views: item.views ?? [] }
+  const context = item.layer === "meaning" || item.flavor ? { views: item.views ?? [] }
     : item.layer === "intent" ? { pattern: item.pattern ?? [] }
     : null;
   return { layer: item.layer ?? null, label: item.label ?? null, charged: item.charged ?? null, context };
@@ -341,13 +345,32 @@ export async function submitResults(
   return { saved };
 }
 
+// ---------- links between blocks ----------
+
+// Shows one block as context on another. First kind: conflict of interest, where the context is a
+// Tier 1 block like "Funder F funded study S", shown on S. It never changes S's tier.
+export async function linkBlocks(
+  supabase: SupabaseClient,
+  { from_block_id, to_block_id, relation = "coi", note, actor = "becket" }:
+    { from_block_id: string; to_block_id: string; relation?: string; note?: string; actor?: string },
+) {
+  if (!from_block_id || !to_block_id) throw new Error("link_blocks needs from_block_id and to_block_id");
+  const { data: from, error } = await supabase.from("blocks").select("tier").eq("id", from_block_id).single();
+  if (error) throw error;
+  if (relation === "coi" && from.tier !== 1) throw new Error("A conflict-of-interest link needs a Tier 1 block as its context");
+  const { error: linkError } = await supabase.from("block_links")
+    .upsert({ from_block_id, to_block_id, relation, note: note ?? null, actor }, { onConflict: "from_block_id,to_block_id,relation" });
+  if (linkError) throw linkError;
+  return { linked: true };
+}
+
 // ---------- claim card details ----------
 
 export async function blockDetail(supabase: SupabaseClient, { block_id }: { block_id: string }) {
   if (!block_id) throw new Error("block_detail needs block_id");
   const { data: block, error } = await supabase
     .from("blocks")
-    .select("id, claim_text, tier, status, scope, as_of, reason, created_at, updated_at, layer, label, charged, context")
+    .select("id, claim_text, tier, status, scope, as_of, reason, created_at, updated_at, layer, label, charged, context, flavor")
     .eq("id", block_id)
     .single();
   if (error) throw error;
@@ -371,9 +394,15 @@ export async function blockDetail(supabase: SupabaseClient, { block_id }: { bloc
     .select("old_text, new_text, actor, created_at")
     .eq("block_id", block_id)
     .order("created_at", { ascending: true });
+  // Context blocks shown on this one, e.g. who funded a study (conflict of interest).
+  const { data: links } = await supabase
+    .from("block_links")
+    .select("relation, note, context: blocks!block_links_from_block_id_fkey(id, claim_text, tier)")
+    .eq("to_block_id", block_id);
   return {
     block,
     exhibits: await exhibitsFor(supabase, block_id),
+    context: links ?? [],
     history,
     challenges: challenges ?? [],
     wording: wording ?? [],
@@ -529,11 +558,11 @@ function blockToItem(block: LibraryMatch): Item {
 async function layersOf(supabase: SupabaseClient, ids: string[]) {
   const found = new Map<string, Partial<Item>>();
   if (!ids.length) return found;
-  const { data } = await supabase.from("blocks").select("id, layer, label, charged, context").in("id", ids);
+  const { data } = await supabase.from("blocks").select("id, layer, label, charged, context, flavor").in("id", ids);
   for (const row of data ?? []) {
-    if (!row.layer && !row.charged) continue;
+    if (!row.layer && !row.charged && !row.flavor) continue;
     found.set(row.id, {
-      layer: row.layer, label: row.label, charged: row.charged,
+      layer: row.layer, label: row.label, charged: row.charged, flavor: row.flavor,
       views: row.context?.views ?? [], pattern: row.context?.pattern ?? [],
     });
   }
@@ -648,6 +677,7 @@ async function saveResearched(
     const { data: block, error } = await supabase.from("blocks").insert({
       claim_text: item.text,
       tier,
+      flavor: tier === 2 ? item.flavor ?? null : null,
       status: "ai_draft",
       scope: item.scope,
       as_of: item.as_of,
